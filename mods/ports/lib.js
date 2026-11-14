@@ -123,6 +123,8 @@ export function owner(pid, procs, cwd, ctx) {
     p = proc.ppid;
   }
   if (DOCKER.test(basename(procs.get(pid)?.comm))) return { kind: "docker", address: null };
+  const by = startedBy(pid, procs, cwd);
+  if (by.app || (by.agent && !by.left)) return { kind: "orphan", address: null }; // another app's agent: not a guess's
   if (cwd) {
     const hits = ctx.areas.filter((a) => (a.exact ? cwd === a.root : inside(cwd, a.root)));
     if (hits.length) {
@@ -134,6 +136,36 @@ export function owner(pid, procs, cwd, ctx) {
     if (mine.length) return { kind: "probable", address: latest(mine).address };
   }
   return { kind: "orphan", address: null };
+}
+
+// Who started a process Herdr doesn't own, so a row never just says "no agent": the agent CLI on its parent chain
+// (claude, codex…), the app at the chain's top (/Applications/<App>.app, never Herdr), or, when its parent is gone,
+// the Claude session whose scratchpad it was left in. place: its worktree's name, else its folder's.
+const AGENT_NAMES = { claude: "Claude", codex: "Codex", opencode: "OpenCode", pi: "pi", omp: "omp" };
+const APP = /^(?:\/System|\/Users\/[^/]+)?\/Applications\/(?:Utilities\/)?([^/]+)\.app\//;
+export function startedBy(pid, procs, cwd) {
+  let agent = null, app = null;
+  const seen = new Set([pid]);
+  for (let p = procs.get(pid)?.ppid, hops = 0; p > 1 && hops < MAX_HOPS && !seen.has(p) && !app; hops++) {
+    seen.add(p);
+    const comm = procs.get(p)?.comm ?? "";
+    agent ??= AGENT_NAMES[basename(comm).replace(/^-/, "")] ?? null;
+    const name = APP.exec(comm)?.[1];
+    if (name && !name.startsWith("Herdr")) app = name;
+    p = procs.get(p)?.ppid;
+  }
+  const scratch = scratchSlug(cwd);
+  const left = !agent && !app && procs.get(pid)?.ppid === 1;
+  return { agent: agent ?? (left && scratch ? "Claude" : null), app, left,
+    place: /\/worktrees\/([^/]+)/.exec(cwd ?? "")?.[1] ?? (scratch ? /-worktrees-(.+)$/.exec(scratch)?.[1] ?? null : basename(cwd) || null) };
+}
+
+// startedBy as a row reads it ("Claude app", "Codex in iTerm", "left by Claude Code"); full adds the place (the card).
+export function byLine(by, full = false) {
+  const line = by.app ? (by.agent ? `${by.agent} in ${by.app}` : `${by.app} app`)
+    : by.left ? (by.agent ? `left by ${by.agent}` : by.place ? `left running in ${by.place}` : "left running")
+    : by.agent ?? (by.place ? `in ${by.place}` : "outside Herdr");
+  return full && by.place && !line.includes(by.place) ? `${line} · ${by.place}` : line;
 }
 
 // ---- Servers (the rows) ----
@@ -206,7 +238,8 @@ export function servers({ listeners, procs, cwds, ctx, home }) {
     if (!worthShowing(o, cwd, comm, home)) continue;
     out.push({ key, pid: g.pid, port: g.port, ports: portsOf(g.pid), command: basename(comm) || g.command, hosts: g.hosts,
       url: urlFor(g.hosts, g.port), web: isWeb(g.port, comm), kind: kindOf({ port: g.port, command: comm, owner: o }),
-      network: g.hosts.some((h) => ANY.includes(h) || !LOOPBACK(h)), age: procs.get(g.pid)?.age ?? 0, cwd, owner: o });
+      network: g.hosts.some((h) => ANY.includes(h) || !LOOPBACK(h)), age: procs.get(g.pid)?.age ?? 0, cwd, owner: o,
+      by: o.kind === "orphan" ? startedBy(g.pid, procs, cwd) : null });
   }
   return out;
 }

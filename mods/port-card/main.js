@@ -188,7 +188,7 @@ export default class PortCard extends View {
     const address = s.web ? s.url : s.url.replace(/^http:\/\//, "");
 
     const agentLine = w.kind === "docker" ? div().text_color(t.foreground).child("Docker")
-      : w.kind === "orphan" ? div().text_color(t.muted).child("no agent")
+      : w.kind === "orphan" ? div().truncate().text_color(t.foreground).child(w.detail ?? w.label) // who started it (Ports' byLine)
       : v_flex()
         .child(h_flex().h(M.line).gap(6).items_center().text_color(t.foreground)
           .child(this.mark(t, w, 14))
