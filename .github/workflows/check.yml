@@ -25,7 +25,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
       - name: No leftover debug code
-        run: "! grep -rnE '// ?DEBUG' mods install.sh"
+        run: "! grep -rnE '// ?(DEBUG|PROBE-TEMP)' mods install.sh"
       - name: JSON parses (keys, programs, layouts, mod manifests)
         run: for f in keys.json programs.json layouts/*.json mods/*/mod.json; do python3 -m json.tool "$f" >/dev/null || { echo "::error file=$f::not valid JSON"; exit 1; }; done
       - name: Every mod's JavaScript parses
