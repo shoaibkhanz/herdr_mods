@@ -105,12 +105,13 @@ export default class AgentGraph extends View {
       const cwd = pane.get(x.address)?.cwd ?? x.foreground?.cwd ?? x.cwd ?? null;
       const agent = !!(a || x.report || x.program?.agent);
       const program = a?.program ?? x.program;
+      const tab = tabs.get(a?.tab ?? (lbl && machine ? `${machine}/${lbl}` : lbl));
       return {
         id: x.address, parent: x.parent ?? null, machine, cwd, agent, program,
         status: s in RANK ? s : "idle",
         name: cleanTitle(a?.title || x.title || x.name) || (agent ? program?.name : cwd?.split("/").filter(Boolean).pop()) || x.address,
         kind: agent ? null : x.foreground?.name ?? program?.name ?? "terminal",
-        ...((tab) => ({ tab: tab?.label ?? null, space: tab?.space ?? null }))(tabs.get(a?.tab ?? (lbl && machine ? `${machine}/${lbl}` : lbl))),
+        tab: tab?.label ?? null, space: tab?.space ?? null,
       };
     });
   }
@@ -502,11 +503,10 @@ export default class AgentGraph extends View {
     return this.card(t, n, x, y, z, tone)
       .when(sel && !tone, (el) => el.bg(t.selected))
       .when(d.status === "working" && !isFoc, (el) => el.border_color(alpha(t.working, 0.25 + 0.6 * BREATH.steps[this.breath])))
-      .when(isFoc, (el) => el.border_color(t.accent))
       .cursor_pointer()
       .hover((s) => s.bg(tone ? mix(t.background, tone, 0.14) : sel ? t.selected : t.raised).border_color(isFoc ? t.accent : tone ?? t.input).shadow_sm())
       .on_click(() => { if (!this.drag?.moved) this.focusAgent(d); }) // a pan that started on the card isn't a click
-      .when(isFoc, (el) => this.ring(t, el, n, z, true))
+      .map((el) => this.ring(t, el, n, z, isFoc))
       .child(h_flex().gap(8 * z).items_center()
         .when(!!icon, (el) => el.child(icon))
         .child(div().flex_1().min_w(0).truncate().text_size(13 * z).font_semibold().text_color(t.foreground).child(d.name)))
