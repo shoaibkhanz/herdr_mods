@@ -130,12 +130,14 @@ test("startedBy: Codex CLI in iTerm names both; a Codex desktop app reads as an 
     .toBe("Terminal app");
 });
 
-test("startedBy: a server whose Claude session is gone reads as left by it", () => {
+test("startedBy: a server whose Claude session has ended says so", () => {
   const by = startedBy(8035, procs([8035, 1, "/opt/homebrew/Cellar/python@3.15/3.15.2/Frameworks/Python.framework/Versions/3.15/Resources/Python.app/Contents/MacOS/Python"]), SCRATCH);
   expect(by).toEqual({ agent: "Claude", app: null, left: true, place: "ai-artifacts-research-6b95a0" }); // its own Python.app isn't an app
-  expect(byLine(by)).toBe("left by Claude");
-  expect(byLine(by, true)).toBe("left by Claude · ai-artifacts-research-6b95a0");
-  expect(byLine(startedBy(8035, procs([8035, 1, "python"]), "/Users/me/code/site"))).toBe("left running in site");
+  expect(byLine(by)).toBe("Claude ended");
+  expect(byLine(by, true)).toBe("Started by a Claude session that has ended · ai-artifacts-research-6b95a0");
+  const gone = startedBy(8035, procs([8035, 1, "python"]), "/Users/me/code/site");
+  expect(byLine(gone)).toBe("in site");
+  expect(byLine(gone, true)).toBe("What started it has ended · site");
 });
 
 test("startedBy: Herdr is never the app; with nothing to name, the folder", () => {
