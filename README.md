@@ -37,9 +37,12 @@ to jump to it, a PR to review it.
 
 ![PRs window](docs/images/prs.png)
 
-The repo's GitHub PRs or GitLab merge requests, and any two-branch compare: file tree, unified or side-by-side diffs,
-inline threads. Comments carry a tag (Statement · Question · Nit · Minor · Major) that posts as a badge. Find (⌘F) across code and comments,
-step through commits with [ ], reply, edit, resolve. Refreshes every 5 s. Full size keeps the agent's terminal beside
+The sidebar keeps its two kinds of comparison apart. **Compare two branches**: pick both sides (`branch ▾ vs main ▾`),
+your uncommitted changes included when the first is the branch you're on. **Pull requests**: the repo's GitHub PRs
+or GitLab merge requests (search, Open · Closed · All), each comparing its own branch with the one it merges into
+(`feat/x → main`). Either opens a file tree and unified or side-by-side diffs with inline threads. Comments carry a
+tag (Statement · Question · Nit · Minor · Major) that posts as a badge. Find (⌘F) across code and comments, step
+through commits with [ ], reply, edit, resolve. Refreshes every 5 s. Full size keeps the agent's terminal beside
 it; it also opens in its own window.
 
 ### Library (⌘⇧K)
