@@ -42,18 +42,26 @@ Left to right, no title bar, the theme's `canvas` behind cards, 1px `border` div
     row. The inbox sizes the block (`splitColumn`, with Spaces): what Ports publishes in `shared("ports.want")` (header,
     up to 5 rows, Working; from its row count alone) plus the room under the inbox's cards. Folded: 0px, no polling.
     - A row: what it is (a 14px `muted` Lucide icon from `kindOf`: app-window web, database, bug debugger, container
-      Docker, plug other), `:port` in Geist Mono 12.5px, the process name (12px `muted`), and on the right a `dim`
+      Docker, plug other), `:port` in 12.5px, the process name (12px `muted`), and on the right a `dim`
       globe when your network can reach it, then who: the owner's program mark (12px; half strength when only
       probable) and its branch (else folder) in Geist 11.5px `dim`. A server no Herdr terminal owns says who started
       it, never "no agent" (`lib.js` `startedBy` / `byLine`, from its parent chain): an agent CLI on it and the app at
       its top ("Codex in iTerm", "Claude app"; Herdr is never the app), or "Claude ended" (the card: "Started by a Claude session that has ended") when its parent is gone and
       it runs in a Claude scratchpad, else its folder; then "· age", the age in `working` past an hour. An app or agent
-      CLI on the chain also stops the folder guess (an outside app's server is never "probably" a Herdr agent's). Hover swaps the owner for an Open chip (web servers only).
-    - The card (`port-card`, a 340px popup): `:port` and process, the address in a mono box with copy, then Agent
-      (mark, program · status or "probably", task; for a server outside Herdr, `byLine(by, true)`: "Claude app ·
-      merge-overnight", "Started by a Claude session that has ended · <worktree>"), Branch, Command (one line, the full one in a tooltip), Folder (only
-      when it isn't the agent's folder), Running (uptime · CPU · memory, every 5 s), Reach, Also (its other ports).
-      Buttons as confirm-safe's: Go to agent (or "Go to agent?", "Go to terminal"), Stop (`blocked`), Open ↵ (`accent`).
+      CLI on the chain also stops the folder guess (an outside app's server is never "probably" a Herdr agent's).
+      Hover swaps the owner for an Open chip (web servers only).
+    - The card (`port-card`, a 560px dialog sized by `lib.js` `cardHeight`: 308 owned, 338 orphan). Its words are
+      decided in `ports/lib.js` (`ownerLines`, `stopFact`, `folderLabel`); the card only draws:
+      - Title: kind icon, `:port` 15/600, process `muted`, the Esc chip.
+      - Who, two lines: the program (500) and its space with the state on the right ("working", "needs you",
+        "finished", "idle" in their colours), then what it's doing and the branch, or "Probably: it runs in this
+        agent's scratchpad / worktree". For a server outside Herdr: "Claude app", "Codex in iTerm", "Started by a
+        Claude session that has ended", "Started outside Herdr", then "in <worktree>" whole.
+      - A `surface` box: the address with "This Mac only" / "Your network" and copy, then the command in `dim`.
+      - Folder (only when it isn't the agent's; a scratchpad reads "Claude scratchpad/…", home as `~`, cut from the
+        start), Running ("2d 20h · N% CPU · size"; an orphan's age in `working` past an hour), Also on.
+      - Buttons: Go to agent / Go to terminal, Stop, Open. The Stop question states the deciding fact and never a
+        verdict: "Stop Python (pid 8035)? Its Claude session has ended. Closes :18791 and :18792."
   - The footer (69px, `workspace-chrome {footer: true}`), hidden while folded.
 - **Tab bar** (42px, `tabs-plus`, Herdr's tab bar): the space's tabs (settled ones hidden unless shown), `+`, then
   buttons for Files, Changes, Agents, PRs, Library and Usage. When the Emergence clone is behind GitHub's `main`, an
@@ -65,13 +73,13 @@ Left to right, no title bar, the theme's `canvas` behind cards, 1px `border` div
   `{panel: true}`, in a 10px-radius bordered card.
 - **Status bar** (28px, `status-plus`, Herdr's `workspace-status` plus this Mac's numbers): left as Herdr's; on the
   right, before the commands hint, CPU (`–` until two samples, then the mean of the last two, 10 s), memory used/total
-  (GB), disk free (home volume) and battery (only on battery), each a 13px Lucide icon and Geist Mono 11.8px, `muted`,
+  (GB), disk free (home volume) and battery (only on battery), each a 13px Lucide icon and 11.8px text, `muted`,
   `working` or `blocked` by level (CPU ≥ 80%; memory pressure warn / critical; disk free < 10% / 5%; battery < 20% /
   10%). Narrow bars drop battery (< 1100px), disk (< 900px), then the memory total (< 760px). A dim "This Mac" leads
   them when the space is on another machine.
-  - Click one: **System**, status-plus opened as a 380px popup at the pointer (`props: { popup: true, tab }`): the
+  - Click one: **System**, status-plus opened as a centred 560px dialog (`props: { popup: true, tab }`): the
     Library's segmented tabs (CPU, Memory, Disk), a 15px headline with a `dim` caption and a 6px meter (`accent`,
-    `working`, `blocked`), then "By agent" (30px rows: mark, branch, value; ≥ 1% CPU or ≥ 100 MB; click goes to the
+    `working`, `blocked`), then "By agent" (32px rows: mark, branch, value; ≥ 1% CPU or ≥ 100 MB; click goes to the
     agent), "Everything else" (`dim`), and "Top processes" (8: name, a `:port` chip unless it's an agent's own, owner
     branch or —, value). Disk: free of total, then every worktree of the open terminals' repos by size (`du -sk`, one
     at a time, 30 s each, kept 5 minutes in `shared("system.du")`; "…" until measured, "too big to measure").
@@ -83,14 +91,21 @@ Colours are theme tokens throughout. The data colours are fixed:
   `#4b5563`.
 - Token kinds use Set2: fresh input `#8da0cb`, cache write `#fc8d62`, cache read `#66c2a5`, output `#e78ac3`.
 
-Type is Geist (11/12/13/15), with Geist Mono for paths, branches and models.
+Type is Geist, Herdr's interface font: no mod sets a font, as none of Herdr's own interface mods does. Monospace only for code itself:
+PR review's diff lines and hunk headers, and the Library's code view; everything around them (branches, PR numbers,
+file paths, commit hashes, counts) is Geist. Sizes: title 15/600, body 13, a name 13/500, secondary 12
+`muted`, labels and section headers 11.5 `dim`, hints and chips 11 `dim`, buttons 12/500.
 
-Dialogs (Emergence's own: confirm-safe, the port card, System, the keys list; Jump is a palette with its search field
-as the header) share one frame: `popover`, radius 10, 24px padding, 16px gaps, a 22px title row (15px semibold title,
-a clickable "Esc" chip: 11px `dim`, `hover` background), 34px buttons (confirm-safe's), sections headed 11.5px `dim`
-with their columns named at the same widths as the rows'. Widths: 440 (a question), 560 (a card), 680 (a list or
-palette). Centred (`kind: "dialog"`), as tall as their content where it's known up front, else a fixed height whose
-lists scroll inside.
+Dialogs (Emergence's own: confirm-safe, the port card, System, the keys list; Jump and the Library are palettes with
+their search field as the header) share one frame: `popover`, radius 10, 24px padding, 16px gaps, a 22px title row
+(15px semibold title, Herdr's "Esc" chip: 11px `dim`, `hover` background, closes on click), sections headed 11.5px
+`dim` with their columns named at the same widths as the rows'. Buttons are 32px, 12/500, and exactly one is filled:
+the one Enter presses (`solid`; a destructive one `blocked` at 18%), with ↵; ←/→/Tab move the fill; the others are
+`raised` with an `input` border, Stop and Delete in `blocked` text. A question or status sits left of the buttons (12
+`muted`, two lines at most), so asking never changes a dialog's height. A boxed subject is `surface` with a `border`.
+Widths: 440 (a question), 560 (a card), 680 (a list or palette). Centred (`kind: "dialog"`), as tall as their content
+where it's known up front, else a fixed height (or a share of the window, as the keys list's 0.9) whose lists scroll
+inside.
 
 ## How it behaves
 
@@ -105,8 +120,10 @@ lists scroll inside.
   - Sub-agents (started with `hc run --bg`) have no tab, so `agents()` misses them: the inbox adds them from
     `terminals()` (`lib.js` `subAgents`: live, with a parent, an agent program or a status report). A blocked one gets a
     "Needs you" card that peeks at it (`terminal.peek`); working ones count in "Working N".
-  - "Working N" (drawn by `ports`, so it stays the last row) is always there (N may be 0) and opens the Agents panel: on what's working (active only, shared
-    `graph.want`) while N > 0, else on everything. The graph draws working agents in `t.working` (border and tint)
+  - "Working N" (drawn by `ports`, so it stays the last row) is always there (N may be 0) and opens the Agents panel.
+    The panel's header has an Active | All switch with each view's count (Active: every agent but the idle; All: every
+    agent), ← / → while it has the keyboard. However it's opened (Working N, ⌘⇧A, the tab bar) it opens on Active when
+    an agent works or needs you, else on All (`agent-graph/lib.js` `openOnActive`), and nothing is remembered. The graph draws working agents in `t.working` (border and tint)
     as it draws blocked ones in `t.blocked`; a working agent's dot breathes (`.loop("opacity", { from: 0.4, to: 1,
     period: 1600 })`) and Working's spinner turns (`svg(spinner).spin(900)`), the only motion. Both are Herdr's native
     motion, never a timer (AGENTS.md: a timer redraws the whole window); they run only while drawn and something works.
@@ -148,7 +165,7 @@ lists scroll inside.
     the worktree (`space.new {folder, machine}`). Inbox: ↑/↓, ↵ focuses the agent.
   - On a worktree (greyed, or an open space in a linked worktree; not a main checkout: lib.js `actionTarget`), ←
     deletes and → archives, each after `confirm-safe` (Herdr's confirm with Cancel selected: Enter alone cancels;
-    a short title, one sentence, the branch and its path (shortened in the middle) in a mono box, an amber line when a space closes, and a
+    a short title, one sentence, the branch and its path (shortened in the middle) in a box, an amber line when a space closes, and a
     button named for the action, red for Delete). Every close gives the keyboard back to Spaces if it was there (the
     Focus rule below; asked by a click from the terminal, it stays in the terminal), and after a `space.close`
     Spaces takes it again 300 ms later (the next space's terminal grabs it).
@@ -175,8 +192,9 @@ lists scroll inside.
   - ⌘E opens Jump.
   - Opening a panel (its ⌘⇧ key or the tab bar) gives it the keyboard: tabs-plus sets `shared("emergence.opened")` and
     the panel focuses itself (clicking one does too). Inside every panel the same arrows: ↑/↓ walk the list (PRs and their
-    files, skills, agents), ←/→ walk the tabs along the top (PRs: Open, Closed, All while the list shows; Library:
-    Skills, Plugins, with an empty search box; Usage: Overview to Rhythm), ↵ opens, Esc steps back and, with nothing
+    files, skills, agents), ←/→ walk the tabs along the top, only while ↑/↓ walk that list and no text field has the
+    caret (PRs: Open, Closed, All, not while a PR's files are open; Library: Skills, Plugins, with an empty search box;
+    Usage: Overview to Rhythm, not in its date fields; Agents: Active, All), ↵ opens, Esc steps back and, with nothing
     left to step out of, gives the keyboard back to the terminal (`tabs-plus.back`; the panel stays open). In a
     window or popup Esc closes it.
 - **Tab names.** tabs-plus renames an unnamed tab after its first terminal's branch, or its repo (else folder, `~` at
@@ -193,7 +211,7 @@ lists scroll inside.
     branch-like word no checkout has adds "New worktree <name>" (Herdr's worktree dialog, action `new`), when the
     tab you're on is in a repo. ↑/↓, ↵ (a worktree opens with `space.new`), Esc.
 - **Agents panel.**
-  - Cards for repos (15px semibold), worktrees (branch in Geist Mono, ahead/behind, a PR chip) and agents (program
+  - Cards for repos (15px semibold), worktrees (branch, ahead/behind, a PR chip) and agents (program
     icon, title without harness marks, state).
   - Click an agent to jump to it, a PR chip to open it in PRs, a repo to list its worktrees.
   - Drag a card to move it; drag empty space to pan; R resets the layout.
@@ -214,10 +232,13 @@ lists scroll inside.
     on one side. MR lists are one page of 100 per state, last updated first, and carry no +/- counts (blank). An outdated thread (written at an older head) gets no line, so it shows apart from the diff as on
     GitHub (GitLab keeps the old version's numbers). Verified live on a throwaway MR: every line kind, range, reply, edit, delete, resolve, MR comment,
     tag badge.
-  - Shows the focused repo's PRs (Open, Closed, All, search) and "This branch vs main". Under "This branch"'s header a
-    bar reads Compare [head ▾] with [base ▾]: each dropdown opens a picker of local and remote branches (`git
-    for-each-ref`, most recent first, filtered as you type, ↵ takes the first; the head's list starts with this branch
-    and its uncommitted work). Picks are kept per repo in `shared("pr-review.heads")` / `shared("pr-review.bases")`.
+  - Shows the focused repo's PRs (Open, Closed, All, search) and, first in the sidebar, the compare: `[head ▾] vs [base ▾]` on
+    one line (the head shortens first), with "Includes uncommitted changes" under it (this branch) or "Committed changes
+    only" (a picked branch). Click the row to show it; click a side's ▾ to pick that branch in a picker that opens right under the
+    row, in the sidebar (local and remote branches, `git for-each-ref`, most recent first, filtered as you type, ↵ takes
+    the first; the head's list starts with this branch and its uncommitted work). Picking shows that compare at once.
+    The sidebar is the only place to pick: the diff's header has no compare bar. ← / → walk Open · Closed · All only
+    while ↑ / ↓ walk the PR list, never while they walk a PR's files (`lib.js` `tabArrows`). Picks are kept per repo in `shared("pr-review.heads")` / `shared("pr-review.bases")`.
     The diff runs from the two sides' merge-base; the default branch diffs from `origin/<base>` when it can, a picked
     branch as named.
   - Changed files form a folder tree with +/− and comment counts; one file's diff shows at a time; ↑/↓ steps files.
@@ -318,7 +339,7 @@ lists scroll inside.
   "tab.select" | "tabs-plus.rail" | "tabs-plus.fold" | "spaces-plus.focus" | "ports.toggle" | "pane.focus")`, and
   `layout.resize` for the Spaces and Ports blocks. Commands `focus`, `toggle`.
 - **`mods/ports`**: `exec` (`lsof`, `ps`, `git`), `terminals()` (pid, foreground, machine, parent), `agents()`,
-  `panes()`, `spaces()`, `openOverlay` (`port-card`), `shared("ports.open")`, `setShared("graph.want" | "ports.want")`,
+  `panes()`, `spaces()`, `openOverlay` (`port-card`), `shared("ports.open")`, `setShared("ports.want")`,
   `run("tabs-plus.graph" | "tabs-plus.fold" | "inbox.focus" | "spaces-plus.focus" | "pane.focus")`. Commands
   `focus`, `back`, `toggle`. `lib.js` (`parseLsof`, `parsePs`, `ownerContext`, `owner`, `servers`, `urlFor`, `isWeb`,
   `blockHeight`, `subAgents`, …) is pure and tested.
