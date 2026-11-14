@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { formatMem, parseStat, parseLsof, holds, shortArgs, canStop, statOutcome, heldOutcome } from "./lib.js";
+import { agePrecise, portList, formatMem, parseStat, parseLsof, holds, shortArgs, canStop, statOutcome, heldOutcome } from "./lib.js";
 
 test("formatMem: KB from ps rss to MB or GB", () => {
   expect(formatMem(18848)).toBe("18 MB");
@@ -47,4 +47,18 @@ test("heldOutcome: lsof's no-match exit is 'not held'; a failure is unknown (nul
   expect(heldOutcome({ code: 1, stdout: "" }, 22073, 8765)).toBe(false);
   expect(heldOutcome(null, 22073, 8765)).toBe(null);
   expect(heldOutcome({ code: -1, stdout: "" }, 22073, 8765)).toBe(null);
+});
+
+test("agePrecise: <1m, minutes, hours and minutes, days and hours", () => {
+  expect(agePrecise(30)).toBe("<1m");
+  expect(agePrecise(5 * 60)).toBe("5m");
+  expect(agePrecise(3 * 3600 + 12 * 60)).toBe("3h 12m");
+  expect(agePrecise(2 * 86400 + 20 * 3600 + 1 * 60)).toBe("2d 20h");
+});
+
+test("portList: up to three ports by name, then a count, so the Stop question stays within two lines", () => {
+  expect(portList([8799])).toBe(":8799");
+  expect(portList([18791, 18792])).toBe(":18791 and :18792");
+  expect(portList([3000, 3001, 3002])).toBe(":3000, :3001 and :3002");
+  expect(portList([3000, 3001, 3002, 3003, 3004])).toBe(":3000, :3001 and 3 more");
 });

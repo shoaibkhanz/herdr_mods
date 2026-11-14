@@ -129,11 +129,11 @@ export function owner(pid, procs, cwd, ctx) {
     const hits = ctx.areas.filter((a) => (a.exact ? cwd === a.root : inside(cwd, a.root)));
     if (hits.length) {
       const deepest = Math.max(...hits.map((a) => a.root.length));
-      return { kind: "probable", address: latest(hits.filter((a) => a.root.length === deepest)).address };
+      return { kind: "probable", address: latest(hits.filter((a) => a.root.length === deepest)).address, why: "worktree" };
     }
     const s = scratchSlug(cwd);
     const mine = s ? ctx.areas.filter((a) => a.slug === s) : [];
-    if (mine.length) return { kind: "probable", address: latest(mine).address };
+    if (mine.length) return { kind: "probable", address: latest(mine).address, why: "scratch" };
   }
   return { kind: "orphan", address: null };
 }
@@ -161,13 +161,52 @@ export function startedBy(pid, procs, cwd) {
 }
 
 // startedBy as a row reads it ("Claude app", "Codex in iTerm", "Claude ended": its session ended, the server didn't);
-// full (the card, which has room) spells an ended starter out and adds the place.
+// full (the card's first owner line, which has room) spells an ended or unknown starter out. The place is the card's
+// second line (ownerLines), never joined here: joined, it was the part that got cut off.
 export function byLine(by, full = false) {
   const ended = by.left && (by.agent ? (full ? `Started by a ${by.agent} session that has ended` : `${by.agent} ended`)
     : full ? "What started it has ended" : null);
-  const line = by.app ? (by.agent && by.agent !== by.app ? `${by.agent} in ${by.app}` : `${by.app} app`) // not "Claude in Claude"
-    : ended || by.agent || (by.place ? `in ${by.place}` : "outside Herdr");
-  return full && by.place && !line.includes(by.place) ? `${line} · ${by.place}` : line;
+  if (by.app) return by.agent && by.agent !== by.app ? `${by.agent} in ${by.app}` : `${by.app} app`; // not "Claude in Claude"
+  return ended || by.agent || (full ? "Started outside Herdr" : by.place ? `in ${by.place}` : "outside Herdr");
+}
+
+const tilde = (path, home) => (path && home && inside(path, home) ? `~${path.slice(home.length)}` : path ?? "");
+// The parts of a line, blanks and repeats (of each other or of `seen`) left out, joined with " · ".
+const parts = (list, seen = []) => list.filter((x, i) => x && !seen.includes(x) && list.indexOf(x) === i).join(" · ");
+
+// The port card's owner block, two lines whatever the owner (the card's height is fixed): who, then what it's doing
+// and where. o: who()'s fields plus Ports' `by` and home.
+export function ownerLines(o) {
+  if (o.kind === "docker") return { line1: "Docker", line2: "Docker Desktop publishes this port. Stop it in Docker." };
+  if (o.kind === "orphan") { // where it runs: its worktree, else the folder label (a session outside a worktree has no place)
+    const where = o.by?.place || o.folderText;
+    return { line1: byLine(o.by ?? {}, true), line2: where ? `in ${where}` : "" };
+  }
+  const line1 = parts([o.program, o.space]);
+  const doing = o.probable ? [`Probably: it runs in this agent's ${o.why === "scratch" ? "scratchpad" : "worktree"}`, o.branch]
+    : [o.task, o.branch];
+  return { line1, line2: parts(doing, line1.split(" · ")) || tilde(o.folder, o.home) };
+}
+
+const STATE = { working: "is working", blocked: "needs you" };
+// The deciding fact the Stop question states (never a verdict: Ports can't see who else uses a port), or null.
+export function stopFact(o) {
+  if (o.kind === "orphan") {
+    const by = o.by ?? {};
+    if (by.app) return by.agent && by.agent !== by.app ? `${by.agent} in ${by.app} started it.` : `The ${by.app} app started it.`;
+    if (by.left) return by.agent ? `Its ${by.agent} session has ended.` : "What started it has ended.";
+    return by.agent ? `${by.agent} started it.` : "It was started outside Herdr.";
+  }
+  const state = STATE[o.status];
+  if (o.probable) return state ? `It may be ${o.program}'s, which ${state}.` : `It may be ${o.program}'s.`;
+  return state ? `${o.program} ${state}.` : null;
+}
+
+// A server's folder as the card shows it: a Claude scratchpad by name ("Claude scratchpad/spike"), home as ~.
+export function folderLabel(cwd, home) {
+  if (!cwd) return "";
+  if (scratchSlug(cwd)) return `Claude scratchpad${/\/scratchpad(\/.*)?$/.exec(cwd)?.[1] ?? ""}`;
+  return tilde(cwd, home);
 }
 
 // ---- Servers (the rows) ----
@@ -271,11 +310,9 @@ export const subAgents = (terminals, known) => terminals
 
 // The port card's measures (mods/port-card draws with the same numbers): it opens as a centred dialog, which needs
 // its height up front, so the height follows the lines the card will show.
-export const CARD = { width: 560, pad: 24, gap: 16, header: 22, url: 34, line: 20, task: 20, fieldGap: 10, buttons: 34 };
+export const CARD = { width: 560, pad: 24, gap: 16, header: 22, owner: 40, box: 52, line: 20, fieldGap: 10, buttons: 32 };
 
 export function cardHeight(server, who) {
-  const owned = who.kind === "sure" || who.kind === "probable";
-  const fields = [true, !!who.branch, true, !!server.cwd && server.cwd !== who.folder, true, true, server.ports.length > 1].filter(Boolean).length;
-  const body = fields * CARD.line + (fields - 1) * CARD.fieldGap + (owned && who.task ? CARD.task : 0);
-  return 2 * CARD.pad + CARD.header + CARD.url + body + CARD.buttons + 3 * CARD.gap;
+  const n = 1 + (server.cwd && server.cwd !== who.folder ? 1 : 0) + (server.ports.length > 1 ? 1 : 0); // Running, Folder?, Also on?
+  return 2 * CARD.pad + CARD.header + CARD.owner + CARD.box + n * CARD.line + (n - 1) * CARD.fieldGap + CARD.buttons + 4 * CARD.gap;
 }

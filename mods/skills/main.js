@@ -222,7 +222,7 @@ export default class Skills extends View {
           .child(div().flex_1().min_w(0).truncate().text_size(13).font_semibold().text_color(t.foreground).child(s.name))
           .child(chips(t, s.skills ? [s.skills.length ? plural(s.skills.length, "skill") : "no skills"] : plugin ? [] : s.sources)))
         .when(Boolean(d), (el) => el.child(div().max_h(34).overflow_hidden().text_size(12).line_height("17px").text_color(t.muted).child(d.length > 104 ? `${d.slice(0, 100).trimEnd()}…` : d)))
-        .when(Boolean(s.skills), (el) => el.child(div().truncate().text_size(11).font_family(MONO).text_color(t.dim)
+        .when(Boolean(s.skills), (el) => el.child(div().truncate().text_size(11).text_color(t.dim)
           .child([/^\d/.test(s.version) ? `v${s.version}` : s.version, s.marketplace].filter(Boolean).join(" · "))));
     };
     const skillBody = (s) => s.body === null ? quiet(t, "SKILL.md is unreadable or larger than 1 MB.") :
@@ -244,9 +244,9 @@ export default class Skills extends View {
         .child(v_flex().flex_1().min_w(0).gap(4)
           .child(div().truncate().text_size(15).font_semibold().text_color(t.foreground).child(sel.name))
           .child(h_flex().gap(8).text_size(11).text_color(t.dim)
-            .child(div().min_w(0).text_ellipsis_start().whitespace_nowrap().overflow_hidden().font_family(MONO).child(tilde(sel.real)))
+            .child(div().min_w(0).text_ellipsis_start().whitespace_nowrap().overflow_hidden().child(tilde(sel.real)))
             .child(div().flex_none().child(files ? plural(files.length, "file") : "…"))))
-        .child(h_flex().id("sk-open").flex_none().h(28).px(12).gap(6).items_center().rounded(6).bg(t.accent).text_color(t.accent_foreground)
+        .child(h_flex().id("sk-open").flex_none().h(28).px(12).gap(6).items_center().rounded(6).bg(t.solid).text_color(t.solid_foreground)
           .text_size(12).cursor_pointer().hover((st) => st.opacity(0.9)).on_click((_e, cx) => { this.open(sel); cx.notify(); })
           .child(icon("open").size(13)).child(sel.skills?.length === 0 ? "Files" : "Open").child(div().text_size(11).opacity(0.7).child("↵"))))
       .child(sel.skills ? pluginBody(sel) : skillBody(sel));
@@ -321,7 +321,8 @@ export default class Skills extends View {
         .child(icon("search").size(16).flex_none().text_color(t.dim))
         .child(Input.new(this.input).flex_1().h_full().text_size(15).text_color(t.foreground))
         .child(div().flex_none().text_size(11).text_color(t.dim).child(count))
-        .child(div().id("sk-esc").flex_none().cursor_pointer().on_click(() => closeOverlay(this.overlay)).child(key("esc"))))
+        .child(div().id("sk-esc").flex_none().px(6).py(2).rounded(5).text_size(11).text_color(t.dim).cursor_pointer()
+          .hover((x) => x.bg(t.hover).text_color(t.foreground)).on_click(() => closeOverlay(this.overlay)).child("Esc")))
       .child(tabs)
       .when(Boolean(crumbs), (el) => el.child(crumbs))
       .child(body)
@@ -330,7 +331,7 @@ export default class Skills extends View {
         .child(h_flex().gap(6).items_center().child(key("↵")).child("open"))
         .child(h_flex().gap(6).items_center().child(key("⌘R")).child(this.loading && cache ? "rescanning…" : "rescan"))
         .child(div().flex_1())
-        .when(Boolean(cache?.repo), (el) => el.child(div().font_family(MONO).truncate().child(`+ ${tilde(cache.repo)}`))));
+        .when(Boolean(cache?.repo), (el) => el.child(div().truncate().child(`+ ${tilde(cache.repo)}`))));
   }
 
   // ── Window role ────────────────────────────────────────────────────────────
@@ -442,10 +443,10 @@ export default class Skills extends View {
     else if (!v) content = quiet(t, "Loading skill…");
     else if (v.note) content = v_flex().flex_1().items_center().justify_center().gap(4)
       .child(div().text_size(13).text_color(t.muted).child(v.note))
-      .child(div().text_size(11).font_family(MONO).text_color(t.dim).child(cur));
+      .child(div().text_size(11).text_color(t.dim).child(cur));
     else if (this.code) content = v_flex().flex_1().min_w(0).min_h(0)
       .child(h_flex().h(32).flex_none().px(16).gap(8).items_center().border_b(1).border_color(t.border)
-        .child(div().flex_1().min_w(0).truncate().text_size(12).font_family(MONO).text_color(t.muted).child(cur))
+        .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.muted).child(cur))
         .child(div().text_size(11).text_color(t.dim).child(fileInfo ? formatSize(fileInfo.size) : "")))
       .child(Editor.new(this.code).flex_1().min_h(0));
     else if (v.text === null) content = quiet(t, "Loading…");
@@ -457,9 +458,9 @@ export default class Skills extends View {
             ? v_flex().p(12).gap(8).rounded(10).border_1().border_color(t.border).bg(t.surface)
               .when(Boolean(desc), (el) => el.child(div().text_size(13).line_height("20px").text_color(t.muted).child(desc)))
               .child(h_flex().gap(8).items_center().text_size(11).text_color(t.dim)
-                .child(div().flex_1().min_w(0).text_ellipsis_start().whitespace_nowrap().overflow_hidden().font_family(MONO).child(tilde(this.dir)))
+                .child(div().flex_1().min_w(0).text_ellipsis_start().whitespace_nowrap().overflow_hidden().child(tilde(this.dir)))
                 .child(div().flex_none().child(`${files.length} file${files.length === 1 ? "" : "s"}`)))
-            : div().text_size(11).font_family(MONO).text_color(t.dim).child(cur))
+            : div().text_size(11).text_color(t.dim).child(cur))
           .child(div().text_size(13).text_color(t.foreground).child(TextView.markdown(`md-${this.dir}/${cur}`, v.text).selectable(true)
             .on_link_click((url, cx) => this.follow(url, cx)))));
     }

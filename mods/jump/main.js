@@ -8,9 +8,10 @@
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, ScrollHandle } from "gpui-base";
-import { agents, spaces, panes, focused, exec, run, theme, props, shared, setShared, openOverlay, closeOverlay } from "herdr";
+import { agents, spaces, panes, focused, exec, run, theme, props, shared, setShared, openOverlay, closeOverlay, home } from "herdr";
 
-const MONO = "Geist Mono";
+const tilde = (p) => (p && home() && (p === home() || p.startsWith(`${home()}/`)) ? `~${p.slice(home().length)}` : p ?? "");
+
 const inside = (p, dir) => Boolean(p) && (p === dir || p.startsWith(dir + "/"));
 const ago = (ms) => {
   const s = Math.max(0, (Date.now() - ms) / 1000);
@@ -112,23 +113,25 @@ export default class Jump extends View {
       .child(div().size(16).flex_none().flex().items_center().justify_center().when(Boolean(icon), (x) => x.child(icon)))
       .child(v_flex().flex_1().min_w(0).gap(2).child(top).child(bottom))
       .when(Boolean(right), (x) => x.child(right));
-    const sub = (text, mono) => div().min_w(0).truncate().text_size(mono ? 11 : 12).text_color(t.dim).when(mono, (x) => x.font_family(MONO)).child(text);
+    // The second line: 12 dim, one style for every row; a path (with ~) is cut from the start, where its name is.
+    const sub = (text, path) => div().min_w(0).whitespace_nowrap().overflow_hidden().text_size(12).text_color(t.dim)
+      .map((x) => (path ? x.text_ellipsis_start() : x.text_ellipsis())).child(text);
     const row = (r, i) => {
       const on = i === this.at;
       if (r.kind === "new") return two(on, div().text_size(15).text_color(t.accent).child("+"),
-        h_flex().gap(6).text_size(13).text_color(t.foreground).child("New worktree").child(div().font_family(MONO).text_color(t.accent).child(r.branch)),
+        h_flex().gap(6).text_size(13).text_color(t.foreground).child("New worktree").child(div().text_color(t.accent).child(r.branch)),
         sub(`from ${r.repo}, opened as a space`));
       if (r.kind === "wt") return two(on, svg("mods/agent-graph/branch.svg").size(15).text_color(t.muted),
         h_flex().gap(8).items_center().child(div().min_w(0).truncate().text_size(13).text_color(t.foreground).child(r.branch ?? "(detached)")).child(div().flex_none().text_size(12).text_color(t.muted).child(r.repo)),
-        sub(`${r.machine ? `${r.machine}:` : ""}${r.path}`, true),
+        sub(`${r.machine ? `${r.machine}:` : ""}${tilde(r.path)}`, true),
         v_flex().flex_none().items_end().gap(2).text_size(11).text_color(t.dim).when(on, (x) => x.child("↵ open as space")).when(r.at > 0, (x) => x.child(`committed ${ago(r.at)}`)));
       const p = r.program, st = r.tb.status, since = st === "working" ? r.tb.working_since : r.tb.changed_at;
       return two(on, p?.icon ? (p.tint ? svg(p.icon).size(15).text_color(t.muted) : image(p.icon).size(15)) : null,
         h_flex().gap(8).items_center()
           .child(div().flex_none().max_w(300).truncate().text_size(13).text_color(t.foreground).when(r.here, (x) => x.font_semibold()).child(r.tb.name))
           .child(div().flex_none().text_size(12).text_color(t.muted).child(r.s.name))
-          .when(Boolean(r.branch) && r.branch !== r.tb.name, (x) => x.child(div().min_w(0).truncate().font_family(MONO).text_size(11).text_color(t.dim).child(r.branch))),
-        sub(r.on || r.cwd || "", !r.on),
+          .when(Boolean(r.branch) && r.branch !== r.tb.name, (x) => x.child(div().min_w(0).truncate().text_size(12).text_color(t.dim).child(r.branch))),
+        sub(r.on || tilde(r.cwd) || "", !r.on),
         v_flex().flex_none().items_end().gap(2).text_size(11)
           .when(Boolean(st), (x) => x.child(h_flex().gap(5).items_center().text_color(st === "blocked" ? t.blocked : st === "done" ? t.done : t.muted)
             .when(st === "working", (y) => y.child(svg("mods/workspace-chrome/spinner.svg").size(11).text_color(t.working).spin(900)))
@@ -137,7 +140,7 @@ export default class Jump extends View {
           .child(div().text_color(t.dim).child(r.here ? "you're here" : r.who)));
     };
     const move = (by, cx) => { if (rows.length) { this.at = (this.at + by + rows.length) % rows.length; this.list.scroll_to_item(this.at); } cx.stop_propagation(); cx.notify(); };
-    return v_flex().id("jump").size_full().bg(t.popover).font_family("Geist").text_size(13)
+    return v_flex().id("jump").size_full().bg(t.popover).text_size(13)
       .on_key_down((e, cx) => {
         if (e.key === "escape") this.dismiss();
         else if (e.key === "down") move(1, cx);
@@ -146,11 +149,13 @@ export default class Jump extends View {
       .child(h_flex().h(52).flex_none().px(16).gap(10).items_center().border_b(1).border_color(t.border)
         .child(svg("mods/workspace-chrome/search.svg").size(16).flex_none().text_color(t.dim))
         .child(Input.new(this.input).id("jump-input").flex_1().h_full().text_size(15).text_color(t.foreground))
-        .child(div().flex_none().text_size(11).text_color(t.dim).child("↑↓ pick  ↵ go  Esc")))
+        .child(div().flex_none().text_size(11).text_color(t.dim).child("↑↓ pick · ↵ go"))
+        .child(div().id("jump-esc").flex_none().px(6).py(2).rounded(5).text_size(11).text_color(t.dim).cursor_pointer()
+          .hover((x) => x.bg(t.hover).text_color(t.foreground)).on_click(() => this.dismiss()).child("Esc")))
       .child(v_flex().id("jump-list").flex_1().min_h(0).py(6).overflow_y_scrollbar().track_scroll(this.list)
         .children(rows.map((r, i) => {
           const el = div().id(`jump-${i}`).on_click(() => this.go(r)).child(row(r, i));
-          return i === firstWt ? v_flex().child(div().px(16).pt(10).pb(4).text_size(11).font_semibold().text_color(t.dim).child("Worktrees, not open")).child(el) : el;
+          return i === firstWt ? v_flex().child(div().px(16).pt(10).pb(4).text_size(11.5).font_medium().text_color(t.dim).child("Worktrees, not open")).child(el) : el;
         }))
         .when(!rows.length, (x) => x.child(div().p(16).text_center().text_size(13).text_color(t.muted).child("Nothing matches."))));
   }

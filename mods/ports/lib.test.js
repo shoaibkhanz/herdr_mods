@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
 import { parseLsof, parseCwds, parsePs, parseEtime, slug, scratchSlug, ownerContext, owner,
-  urlFor, isWeb, servers, sortServers, holds, ago, blockHeight, subAgents, cardHeight, isLocal, rootOf, kindOf, startedBy, byLine } from "./lib.js";
+  urlFor, isWeb, servers, sortServers, holds, ago, blockHeight, subAgents, cardHeight, isLocal, rootOf, kindOf, startedBy, byLine, ownerLines, stopFact, folderLabel } from "./lib.js";
 import { LSOF, CWDS, PS, SCRATCH } from "./fixtures.js";
 
 test("parseLsof: one entry per pid+host+port; IPv4/IPv6 sockets of one pid kept apart by host", () => {
@@ -52,21 +52,21 @@ test("owner: sure through the parent chain, from a grandchild of the agent", () 
 
 test("owner: parent pid 1 inside an agent's worktree is probable (Review Focus 2)", () => {
   const ctx = ownerContext({ terminals: [term("t1", 200, 300, "/w/a/src")], roots: new Map([["/w/a/src", "/w/a"]]), home: HOME });
-  expect(owner(8035, procs([8035, 1]), "/w/a/web", ctx)).toEqual({ kind: "probable", address: "t1" });
+  expect(owner(8035, procs([8035, 1]), "/w/a/web", ctx)).toEqual({ kind: "probable", address: "t1", why: "worktree" });
   expect(owner(8035, procs([8035, 1]), "/w/ab", ctx)).toEqual({ kind: "orphan", address: null }); // a sibling folder, not inside
 });
 
 test("owner: nested worktree beats the main checkout that contains it", () => {
   const ctx = ownerContext({ terminals: [term("t1", 200, 300, "/w/a"), term("t2", 210, 310, "/w/a/.claude/worktrees/x")],
     roots: new Map([["/w/a", "/w/a"], ["/w/a/.claude/worktrees/x", "/w/a/.claude/worktrees/x"]]), home: HOME });
-  expect(owner(8035, procs([8035, 1]), "/w/a/.claude/worktrees/x/app", ctx)).toEqual({ kind: "probable", address: "t2" });
-  expect(owner(8035, procs([8035, 1]), "/w/a/app", ctx)).toEqual({ kind: "probable", address: "t1" });
+  expect(owner(8035, procs([8035, 1]), "/w/a/.claude/worktrees/x/app", ctx)).toEqual({ kind: "probable", address: "t2", why: "worktree" });
+  expect(owner(8035, procs([8035, 1]), "/w/a/app", ctx)).toEqual({ kind: "probable", address: "t1", why: "worktree" });
 });
 
 test("owner: two agents in one worktree: the one that changed most recently", () => {
   const ctx = ownerContext({ terminals: [term("t1", 200, 300, "/w/a", { status_ms: 5 }), term("t2", 210, 310, "/w/a", { status_ms: 9 })],
     roots: new Map([["/w/a", "/w/a"]]), home: HOME });
-  expect(owner(8035, procs([8035, 1]), "/w/a", ctx)).toEqual({ kind: "probable", address: "t2" });
+  expect(owner(8035, procs([8035, 1]), "/w/a", ctx)).toEqual({ kind: "probable", address: "t2", why: "worktree" });
 });
 
 test("owner: an agent in ~ or in a dotfiles repo at ~ claims nothing (Review Focus 1)", () => {
@@ -77,7 +77,7 @@ test("owner: an agent in ~ or in a dotfiles repo at ~ claims nothing (Review Foc
 
 test("owner: an agent in a folder that isn't a repo matches only that exact folder", () => {
   const ctx = ownerContext({ terminals: [term("t1", 200, 300, "/w/notes")], roots: new Map([["/w/notes", null]]), home: HOME });
-  expect(owner(8035, procs([8035, 1]), "/w/notes", ctx)).toEqual({ kind: "probable", address: "t1" });
+  expect(owner(8035, procs([8035, 1]), "/w/notes", ctx)).toEqual({ kind: "probable", address: "t1", why: "worktree" });
   expect(owner(8035, procs([8035, 1]), "/w/notes/sub", ctx)).toEqual({ kind: "orphan", address: null });
 });
 
@@ -87,7 +87,7 @@ test("owner: Claude scratchpad matches the agent whose folder slugs to it", () =
   expect(scratchSlug(SCRATCH)).toBe(slug(wt));
   expect(scratchSlug("/Users/me/claude-501/x/y")).toBe(null); // not under a temp folder
   const ctx = ownerContext({ terminals: [term("t2", 210, 310, wt)], roots: new Map([[wt, wt]]), home: "/Users/shoaib" });
-  expect(owner(8035, parsePs(PS), SCRATCH, ctx)).toEqual({ kind: "probable", address: "t2" });
+  expect(owner(8035, parsePs(PS), SCRATCH, ctx)).toEqual({ kind: "probable", address: "t2", why: "scratch" });
 });
 
 test("owner: a remote terminal with the same pid claims nothing (Review Focus 4)", () => {
@@ -118,7 +118,7 @@ test("startedBy: an agent in the Claude desktop app names the app and its worktr
   const by = startedBy(86717, CLAUDE_APP, `${MARGO}/.claude/worktrees/merge-overnight/app`);
   expect(by).toEqual({ agent: null, app: "Claude", left: false, place: "merge-overnight" });
   expect(byLine(by)).toBe("Claude app");
-  expect(byLine(by, true)).toBe("Claude app · merge-overnight");
+  expect(byLine(by, true)).toBe("Claude app");
 });
 
 test("startedBy: Codex CLI in iTerm names both; a Codex desktop app reads as an app", () => {
@@ -139,10 +139,10 @@ test("startedBy: a server whose Claude session has ended says so", () => {
   const by = startedBy(8035, procs([8035, 1, "/opt/homebrew/Cellar/python@3.15/3.15.2/Frameworks/Python.framework/Versions/3.15/Resources/Python.app/Contents/MacOS/Python"]), SCRATCH);
   expect(by).toEqual({ agent: "Claude", app: null, left: true, place: "ai-artifacts-research-6b95a0" }); // its own Python.app isn't an app
   expect(byLine(by)).toBe("Claude ended");
-  expect(byLine(by, true)).toBe("Started by a Claude session that has ended · ai-artifacts-research-6b95a0");
+  expect(byLine(by, true)).toBe("Started by a Claude session that has ended");
   const gone = startedBy(8035, procs([8035, 1, "python"]), "/Users/me/code/site");
   expect(byLine(gone)).toBe("in site");
-  expect(byLine(gone, true)).toBe("What started it has ended · site");
+  expect(byLine(gone, true)).toBe("What started it has ended");
 });
 
 test("startedBy: Herdr is never the app; with nothing to name, the folder", () => {
@@ -155,7 +155,7 @@ test("startedBy: Herdr is never the app; with nothing to name, the folder", () =
 test("owner: a server another app started isn't guessed onto a Herdr agent in the same repo", () => {
   const ctx = ownerContext({ terminals: [term("t3p", 200, 300, MARGO)], roots: new Map([[MARGO, MARGO]]), home: "/Users/shoaib" });
   expect(owner(86717, CLAUDE_APP, `${MARGO}/.claude/worktrees/merge-overnight/app`, ctx)).toEqual({ kind: "orphan", address: null });
-  expect(owner(8035, procs([8035, 1]), `${MARGO}/web`, ctx)).toEqual({ kind: "probable", address: "t3p" }); // left behind: still a guess
+  expect(owner(8035, procs([8035, 1]), `${MARGO}/web`, ctx)).toEqual({ kind: "probable", address: "t3p", why: "worktree" }); // left behind: still a guess
 });
 
 test("servers: an orphan row carries who started it; an owned one doesn't", () => {
@@ -276,14 +276,11 @@ test("subAgents (from inbox's lib): live agent sub-terminals agents() misses; no
   expect(subAgents(terms, new Set(["t1"])).map((a) => [a.address, a.status])).toEqual([["t6", "working"], ["t3", "blocked"]]);
 });
 
-test("cardHeight: the centred card fits its lines; optional lines add height", () => {
-  const server = { cwd: "/w/a", ports: [5173] }, who = { kind: "sure", task: "", branch: "main", folder: "/w/a" };
-  const base = cardHeight(server, who);
-  expect(cardHeight(server, { ...who, task: "Fix it" })).toBeGreaterThan(base);              // the task line
-  expect(cardHeight({ ...server, ports: [5173, 24678] }, who)).toBeGreaterThan(base);          // Also
-  expect(cardHeight({ ...server, cwd: "/tmp/x" }, who)).toBeGreaterThan(base);                 // Folder
-  expect(cardHeight(server, { ...who, branch: null })).toBeLessThan(base);                    // no Branch
-  expect(cardHeight({ cwd: null, ports: [1] }, { kind: "orphan", task: "", branch: null, folder: null })).toBeGreaterThan(200);
+test("cardHeight: owned with Folder 308, orphan with Folder and Also on 338; each optional field adds 30", () => {
+  const owned = { kind: "probable", folder: "/Users/shoaib/code/herdr-mods" };
+  expect(cardHeight({ cwd: SCRATCH, ports: [8799] }, owned)).toBe(308);
+  expect(cardHeight({ cwd: SCRATCH, ports: [18791, 18792] }, { kind: "orphan", folder: null })).toBe(338);
+  expect(cardHeight({ cwd: "/Users/shoaib/code/herdr-mods", ports: [8799] }, owned)).toBe(278); // no Folder
 });
 
 test("isLocal: remote terminals are told by their machine/ address prefix as well as machine (review: Important 2)", () => {
@@ -314,4 +311,60 @@ test("kindOf: what a server is, for its icon: web, a database, a debugger, Docke
 
 test("isWeb follows kindOf: only web servers offer Open", () => {
   expect([isWeb(5173, "node"), isWeb(5432, "x"), isWeb(9229, "node"), isWeb(5672, "beam.smp")]).toEqual([true, false, false, false]);
+});
+
+// ---- The port card's words (ports decides, port-card draws) ----
+
+test("ownerLines: sure agent, the space on line 1, what it's doing and the branch on line 2", () => {
+  expect(ownerLines({ kind: "sure", program: "Claude Code", space: "Testing-Herdr-Mods", task: "Herdr agent graph animation testing", branch: "main" }))
+    .toEqual({ line1: "Claude Code · Testing-Herdr-Mods", line2: "Herdr agent graph animation testing · main" });
+});
+
+test("ownerLines: probable says why; repeats and blanks are dropped; an empty line 2 falls back to the folder", () => {
+  expect(ownerLines({ kind: "probable", probable: true, why: "scratch", program: "Claude Code", space: "S", branch: "main" }).line2)
+    .toBe("Probably: it runs in this agent's scratchpad · main");
+  expect(ownerLines({ kind: "probable", probable: true, why: "worktree", program: "Codex", space: "S" }).line2).toBe("Probably: it runs in this agent's worktree");
+  expect(ownerLines({ kind: "sure", program: "Claude Code", space: "Claude Code", task: "Claude Code", branch: "" }).line1).toBe("Claude Code");
+  expect(ownerLines({ kind: "sure", program: "Claude Code", space: "S", task: "main", branch: "main" }).line2).toBe("main");
+  expect(ownerLines({ kind: "sure", program: "zsh", space: "website", task: "", branch: null, folder: "/Users/me/code/site", home: "/Users/me" }).line2).toBe("~/code/site");
+});
+
+test("ownerLines: orphans and docker", () => {
+  const ended = { agent: "Claude", app: null, left: true, place: "ai-artifacts-research-6b95a0" };
+  expect(ownerLines({ kind: "orphan", by: ended })).toEqual({ line1: "Started by a Claude session that has ended", line2: "in ai-artifacts-research-6b95a0" });
+  expect(ownerLines({ kind: "orphan", by: { agent: null, app: "Claude", left: false, place: "merge-overnight" } }).line1).toBe("Claude app");
+  expect(ownerLines({ kind: "orphan", by: { agent: null, app: null, left: false, place: "site" } })).toEqual({ line1: "Started outside Herdr", line2: "in site" });
+  expect(ownerLines({ kind: "orphan", by: { agent: null, app: null, left: true, place: "site" } }).line1).toBe("What started it has ended");
+  expect(ownerLines({ kind: "docker" })).toEqual({ line1: "Docker", line2: "Docker Desktop publishes this port. Stop it in Docker." });
+});
+
+test("stopFact: the deciding fact for every owner, never a verdict", () => {
+  const p = "Claude Code";
+  const facts = [
+    [{ kind: "sure", status: "working", program: p }, "Claude Code is working."],
+    [{ kind: "sure", status: "blocked", program: p }, "Claude Code needs you."],
+    [{ kind: "sure", status: "idle", program: p }, null],
+    [{ kind: "probable", probable: true, status: "working", program: p }, "It may be Claude Code's, which is working."],
+    [{ kind: "probable", probable: true, status: "blocked", program: p }, "It may be Claude Code's, which needs you."],
+    [{ kind: "probable", probable: true, status: "done", program: p }, "It may be Claude Code's."],
+    [{ kind: "orphan", by: { agent: "Claude", app: null, left: true } }, "Its Claude session has ended."],
+    [{ kind: "orphan", by: { agent: "Codex", app: "iTerm", left: false } }, "Codex in iTerm started it."],
+    [{ kind: "orphan", by: { agent: null, app: "Claude", left: false } }, "The Claude app started it."],
+    [{ kind: "orphan", by: { agent: null, app: null, left: true } }, "What started it has ended."],
+    [{ kind: "orphan", by: { agent: null, app: null, left: false } }, "It was started outside Herdr."],
+  ];
+  for (const [who, fact] of facts) expect(stopFact(who)).toBe(fact);
+  expect(facts.some(([, f]) => /safe/i.test(f ?? ""))).toBe(false);
+});
+
+test("folderLabel: a Claude scratchpad by name, home as ~", () => {
+  expect(folderLabel(SCRATCH, "/Users/shoaib")).toBe("Claude scratchpad/spike");
+  expect(folderLabel("/Users/me/code/site", "/Users/me")).toBe("~/code/site");
+  expect(folderLabel(null, "/Users/me")).toBe("");
+});
+
+test("ownerLines: an ended session outside a worktree still says where (the folder label), never a blank line 2", () => {
+  const by = startedBy(8035, procs([8035, 1, "python"]), "/private/tmp/claude-501/-Users-shoaib-code-herdr-mods/abc/scratchpad/spike");
+  expect(by.place).toBe(null);
+  expect(ownerLines({ kind: "orphan", by, folderText: "Claude scratchpad/spike" }).line2).toBe("in Claude scratchpad/spike");
 });

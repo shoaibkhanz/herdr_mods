@@ -3,6 +3,21 @@
 
 const KB_PER_MB = 1024, KB_PER_GB = 1024 * 1024;
 
+// How long a server has run, as the card's Running line says it: "<1m", "5m", "3h 12m", "2d 20h".
+export function agePrecise(sec) {
+  const m = Math.floor(sec / 60), h = Math.floor(m / 60);
+  return m < 1 ? "<1m" : m < 60 ? `${m}m` : h < 24 ? `${h}h ${m % 60}m` : `${Math.floor(h / 24)}d ${h % 24}h`;
+}
+
+// The ports the Stop question names: ":a", ":a and :b", ":a, :b and :c", past three ":a, :b and N more", so the
+// question stays within its two lines.
+export function portList(ports) {
+  const p = ports.map((x) => `:${x}`);
+  if (p.length < 2) return p.join("");
+  if (p.length > 3) return `${p.slice(0, 2).join(", ")} and ${p.length - 2} more`;
+  return `${p.slice(0, -1).join(", ")} and ${p[p.length - 1]}`;
+}
+
 export const formatMem = (kb) => (kb >= KB_PER_GB ? `${(kb / KB_PER_GB).toFixed(1)} GB` : `${Math.round(kb / KB_PER_MB)} MB`);
 
 // From mods/ports/lib.js.
