@@ -1,9 +1,9 @@
 // The sidebar's Ports: every listening TCP server and the agent that owns it, below the inbox. A row opens the port
 // card (mods/port-card): details, Open, Go to agent, Stop. lib.js decides everything; this file polls and draws.
 // Its foot is the sidebar's last row, "Working N" (moved here from the inbox so it stays last), opening the graph.
-// Polls every 5 s (lsof, ps, and git rev-parse once per agent folder) while the sidebar is open; nothing animates,
-// and it re-renders only when the rows change. The inbox sizes this block (rows right under its cards, the slack below
-// them, Working last); this mod publishes what it needs as shared "ports.want".
+// Polls every 5 s (lsof, ps, and git rev-parse once per agent folder) while the sidebar is open, and re-renders when
+// the rows change. The one motion: Working's spinner turns while an agent works (SPIN). The inbox sizes this block
+// (rows right under its cards, the slack below them, Working last); this mod publishes what it needs as shared "ports.want".
 
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
@@ -18,6 +18,9 @@ const RAIL_W = 160; // the sidebar folds to a rail below this width (as Inbox re
 const EXEC = { timeout: 4000 };
 const MONO = "Geist Mono";
 const ICON = (name) => `mods/ports/${name}.svg`;
+// Working's spinner turns while anything works: no rotation in the kit, so 8 pre-turned frames (spin-0..7.svg, 45°
+// apart), one a tick, a turn a second. A tick redraws only this small view, and only while the sidebar is open.
+const SPIN = { frames: 8, ms: 125 };
 // A row leads with what the server is (lib's kindOf); who started it sits on the right, by its branch.
 const KIND = { web: ["app-window", "Web server"], db: ["database", "Database"], debug: ["bug", "Debugger"],
   docker: ["container", "Docker"], other: ["plug", "Server"] };
@@ -66,6 +69,8 @@ export default class Ports extends View {
     cx.timer.every(POLL_MS, (cx) => this.poll(cx));
     cx.timer.after(0, (cx) => this.poll(cx));
     cx.timer.every(FOCUS_CHECK_MS, (cx) => { if (this.fh.is_focused() !== this.ringed) cx.notify(); }); // no blur event
+    this.spin = 0;
+    cx.timer.every(SPIN.ms, (cx) => { if (this.nWorking > 0 && !folded()) { this.spin = (this.spin + 1) % SPIN.frames; cx.notify(); } });
     cx.spawn(async (cx) => {
       for (;;) {
         const c = await nextCommand();
@@ -242,6 +247,7 @@ export default class Ports extends View {
   working(t) {
     const tabbed = agents(), all = [...tabbed, ...subAgents(terminals(), new Set(tabbed.map((a) => a.address)))];
     const n = all.filter((a) => a.status === "working").length;
+    this.nWorking = n; // the spin timer reads it
     const open = () => {
       setShared("graph.want", { activeOnly: n > 0, at: Date.now() });
       if (find(layout(), "panel")?.hidden || find(layout(), "panel-body")?.active !== "graph") run("tabs-plus.graph");
@@ -249,7 +255,7 @@ export default class Ports extends View {
     return h_flex().id("ports-working").h(FOOT_H).px(16).gap(8).flex_none().items_center().text_size(12).text_color(t.muted)
       .border_t(1).border_color(t.border).cursor_pointer().hover((s) => s.text_color(t.foreground)).on_click(open)
       .tooltip(n ? "Open the agent graph on what's working" : "Open the agent graph")
-      .child(svg("mods/workspace-chrome/spinner.svg").size(12).text_color(n ? t.working : t.dim))
+      .child(svg(n ? ICON(`spin-${this.spin}`) : "mods/workspace-chrome/spinner.svg").size(12).text_color(n ? t.working : t.dim))
       .child("Working").child(div().text_size(11).text_color(t.dim).child(String(n))).child(div().flex_1())
       .child(svg("mods/workspace-chrome/chevron-right.svg").size(11).text_color(t.dim));
   }
