@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { parseDiff, selectRange, commentPayload, anchorThreads, ago, firstVisible, fileTree, tagBody, splitTag, findAll, mentions, gapBefore, hiddenRows, pairRows } from "./lib.js";
+import { parseDiff, selectRange, commentPayload, anchorThreads, ago, firstVisible, fileTree, tagBody, splitTag, findAll, mentions, gapBefore, hiddenRows, pairRows, tabArrows } from "./lib.js";
 
 test("findAll: smart case, every match per line, tabs as shown, hunks skipped, given file order", () => {
   const files = parseDiff([
@@ -186,4 +186,11 @@ test("commentPayload: each end's place on both sides, as GitLab names a line (th
   expect(pos(f, 6, 8)).toEqual([[10, 9], [10, 11]]); // +NINE … " ten" (old 10, new 11)
   expect(pos(f, 11, 9)).toEqual([[11, 12], [13, 14]]); // " eleven" … -thirteen
   expect(pos(added, 1, 2)).toEqual([[0, 1], [0, 2]]);
+});
+
+test("tabArrows: ← / → walk Open · Closed · All only while ↑ / ↓ walk the PR list, never while they walk a PR's files", () => {
+  expect(tabArrows({ listShows: true, filesOpen: false, inSearch: false })).toBe(true);  // the list has the arrows
+  expect(tabArrows({ listShows: true, filesOpen: true, inSearch: false })).toBe(false);  // the rail shows, but ↑ / ↓ walk files
+  expect(tabArrows({ listShows: false, filesOpen: false, inSearch: false })).toBe(false); // the list isn't on screen
+  expect(tabArrows({ listShows: true, filesOpen: false, inSearch: true })).toBe(false);  // the search box takes ← / → for its caret
 });

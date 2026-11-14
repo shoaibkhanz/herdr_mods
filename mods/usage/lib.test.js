@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { wilson, levels, clean, heat, summarize, startOfDay, DAY, kindOf, rhythmOf, outputOf, span, keepOf } from "./lib.js";
+import { wilson, levels, clean, heat, summarize, startOfDay, DAY, kindOf, rhythmOf, outputOf, span, keepOf, tabAfter } from "./lib.js";
 
 const NOW = new Date(2026, 10, 12, 15).getTime(); // Thu 12 Nov 2026, 15:00 local
 const s = (h, daysAgo, extra = {}) => ({
@@ -131,4 +131,12 @@ test("selection: spans days and hour blocks, and narrows the sums to what's pick
   expect([r.tiles.sessions, r.tiles.days, r.tiles.activeDays]).toEqual([3, 2, 2]);
   const out = { commits: [{ t: today + 10 * 3600000, repo: "/r/a", add: 1, del: 0 }, { t: today + 15 * 3600000, repo: "/r/a", add: 1, del: 0 }] };
   expect(outputOf(out, { from: today, to: today + DAY, step: DAY, keep: slots }).commits).toBe(1);
+});
+
+test("tabAfter: ← / → walk the tabs (wrapping), but not while a date field has the caret", () => {
+  const tabs = [["overview"], ["compare"], ["rhythm"]];
+  expect(tabAfter(tabs, "overview", "right", false)).toBe("compare");
+  expect(tabAfter(tabs, "overview", "left", false)).toBe("rhythm");
+  expect(tabAfter(tabs, "rhythm", "right", false)).toBe("overview");
+  expect(tabAfter(tabs, "compare", "left", true)).toBe(null); // typing a custom range: the caret's, not the tabs'
 });

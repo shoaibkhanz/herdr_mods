@@ -217,3 +217,10 @@ export function span(kind, a, b) {
 }
 // Whether a moment falls in the selection.
 export const keepOf = ({ kind, keys }) => (kind === "days" ? (ms) => keys.has(startOfDay(ms)) : (ms) => keys.has(weekday(ms) * 24 + new Date(ms).getHours()));
+
+// The tab ← / → move to (wrapping), or null while a date field has the caret: there they move the caret.
+export function tabAfter(tabs, cur, key, typing) {
+  if (typing) return null;
+  const i = tabs.findIndex(([id]) => id === cur);
+  return tabs[(i + (key === "right" ? 1 : tabs.length - 1)) % tabs.length][0];
+}
