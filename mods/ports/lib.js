@@ -165,7 +165,7 @@ export function startedBy(pid, procs, cwd) {
 export function byLine(by, full = false) {
   const ended = by.left && (by.agent ? (full ? `Started by a ${by.agent} session that has ended` : `${by.agent} ended`)
     : full ? "What started it has ended" : null);
-  const line = by.app ? (by.agent ? `${by.agent} in ${by.app}` : `${by.app} app`)
+  const line = by.app ? (by.agent && by.agent !== by.app ? `${by.agent} in ${by.app}` : `${by.app} app`) // not "Claude in Claude"
     : ended || by.agent || (by.place ? `in ${by.place}` : "outside Herdr");
   return full && by.place && !line.includes(by.place) ? `${line} · ${by.place}` : line;
 }

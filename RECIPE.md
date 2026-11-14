@@ -50,7 +50,8 @@ Left to right, no title bar, the theme's `canvas` behind cards, 1px `border` div
       it runs in a Claude scratchpad, else its folder; then "· age", the age in `working` past an hour. An app or agent
       CLI on the chain also stops the folder guess (an outside app's server is never "probably" a Herdr agent's). Hover swaps the owner for an Open chip (web servers only).
     - The card (`port-card`, a 340px popup): `:port` and process, the address in a mono box with copy, then Agent
-      (mark, program · status or "probably", task), Branch, Command (one line, the full one in a tooltip), Folder (only
+      (mark, program · status or "probably", task; for a server outside Herdr, `byLine(by, true)`: "Claude app ·
+      merge-overnight", "Started by a Claude session that has ended · <worktree>"), Branch, Command (one line, the full one in a tooltip), Folder (only
       when it isn't the agent's folder), Running (uptime · CPU · memory, every 5 s), Reach, Also (its other ports).
       Buttons as confirm-safe's: Go to agent (or "Go to agent?", "Go to terminal"), Stop (`blocked`), Open ↵ (`accent`).
   - The footer (69px, `workspace-chrome {footer: true}`), hidden while folded.
