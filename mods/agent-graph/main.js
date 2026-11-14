@@ -5,10 +5,9 @@
 import { View, div, svg, image, PathBuilder } from "gpui-kit";
 import { v_flex, h_flex, Scrollbar } from "gpui-base";
 import { agents, terminals, panes, spaces, focused, exec, run, theme, settings, props, closeOverlay, openOverlay, setShared, shared, home, layout } from "herdr";
-import { buildTree, layout as graphLayout, parseRevParse, prsByBranch, mrsAsPRs, cleanTitle, RANK, mix, ringed, sidebarCursor } from "./lib.js";
+import { buildTree, layout as graphLayout, parseRevParse, prsByBranch, mrsAsPRs, cleanTitle, RANK, mix, ringed, sidebarCursor, openOnActive, filterCounts } from "./lib.js";
 
 const GIT_TTL = 30000, PR_TTL = 60000;
-const MONO = "Geist Mono";
 const ZMIN = 0.3, ZMAX = 2, ZFIT = 1, PAD = 48;
 // A panel keeps graph text readable: narrower than this zoom it shows the tree as a list.
 const PANEL_PAD = 24, PANEL_Z = 0.6;
@@ -71,7 +70,7 @@ export default class AgentGraph extends View {
     this.prs = new Map(); // machine|common -> { at, v: Map | null }
     this.busy = false;
     this.loaded = false;
-    this.activeOnly = localStorage.getItem("activeOnly") === "1";
+    this.activeOnly = null; // Active | All: decided each time the panel opens (lib openOnActive), then the person's
     this.view = null; // { x, y, z } once the person pans or zooms; null = fitted
     this.offsets = new Map(JSON.parse(localStorage.getItem("offsets") || "[]")); // node id -> { x, y } the person dragged it by
     this.sel = null;
@@ -218,10 +217,8 @@ export default class AgentGraph extends View {
     this.Z = Number(settings()?.zoom) > 0 ? Number(settings().zoom) : 1;
     if (this.raw) this.size = { width: this.raw.width / this.Z, height: this.raw.height / this.Z };
     const shown = this.shown();
-    if (shown && !this.wasShown) this.refresh(cx);
-    // The inbox's Working row opens the graph on what's working (active only) or, with nothing working, everything.
-    const want = shared("graph.want");
-    if (want && want.at !== this.wantAt) { this.wantAt = want.at; this.activeOnly = want.activeOnly; localStorage.setItem("activeOnly", want.activeOnly ? "1" : "0"); }
+    const opening = shown && !this.wasShown; // a popup's first render, or a hidden panel shown again
+    if (opening) this.refresh(cx);
     const o = this.panel && shown && shared("emergence.opened"); // opened (⌘⇧A, the tab bar; tabs-plus says so): the keys are its own at once
     if (o?.id === "graph" && o.at !== this.openedAt && Date.now() - o.at < 3000) { this.openedAt = o.at; cx.timer.after(50, () => this.h.focus()); }
     const back = this.panel && shown && shared("emergence.back"); // a panel's window or popup closed: the keyboard comes back
@@ -229,6 +226,7 @@ export default class AgentGraph extends View {
     if (this.panel) { this.comeBack(cx, this.held); this.held = this.h.is_focused(); }
     this.wasShown = shown;
     const items = this.items();
+    if (opening || this.activeOnly === null) this.activeOnly = openOnActive(items); // however it was opened: the same rule
     if (shown && !this.busy && items.some((i) => i.cwd && !this.git.has(key(i.machine, i.cwd)))) this.refresh(cx);
     const tree = buildTree(items, (m, c) => this.git.get(key(m, c))?.v ?? null, (m, c) => this.prs.get(key(m, c))?.v ?? undefined, { activeOnly: this.activeOnly });
     const L = graphLayout(tree), M = this.moved(L); // M: with the person's dragged offsets
@@ -254,6 +252,7 @@ export default class AgentGraph extends View {
         if (k === "f") this.view = null;
         else if ((k === "-" || k === "=" || k === "+") && this.fitted && this.size) this.zoomAt(k === "-" ? 0.8 : 1.25, this.size.width / 2, this.size.height / 2);
         else if (k === "r") { this.offsets.clear(); localStorage.removeItem("offsets"); this.view = null; }
+        else if ((k === "left" || k === "right") && this.activeOnly !== (k === "left")) { this.activeOnly = k === "left"; this.view = null; }
         else if ((k === "down" || k === "up") && picks.length) this.sel = picks[(i + (k === "down" ? 1 : picks.length - 1)) % picks.length].data.id;
         else if (k === "enter" && i >= 0) return this.focusAgent(picks[i].data);
         else return;
@@ -275,37 +274,31 @@ export default class AgentGraph extends View {
   }
 
   header(t, items) {
-    const W = this.panel ? this.size?.width ?? Infinity : Infinity, narrow = W < 420;
-    let counts = STATUS.map((s) => [s, items.filter((i) => i.agent && i.status === s).length]).filter(([, n]) => n);
-    if (W < 360) counts = counts.filter(([s]) => s !== "idle");
+    const W = this.panel ? this.size?.width ?? Infinity : Infinity;
+    const n = filterCounts(items);
     const button = (id, tip, onClick) => h_flex().id(id).h(24).px(8).gap(6).items_center().rounded(6).flex_none()
       .border(1).border_color(t.border).text_size(12).text_color(t.muted).cursor_pointer().tooltip(tip)
       .hover((s) => s.bg(t.hover).border_color(t.input).text_color(t.foreground))
       .on_click((_e, cx) => { onClick(cx); cx.notify(); });
     const icon = (el) => el.w(24).px(0).justify_center().border_color(alpha(t.border, 0)) // icon buttons have no box, as in every panel
       .hover((s) => s.bg(t.hover).text_color(t.foreground));
-    const on = this.activeOnly, label = W >= 520;
-    const hint = !this.panel ? "↑↓ select · ↵ focus · F fit · R reset · Esc close" : W >= 1000 ? "↑↓ select · ↵ focus · F fit · R reset" : null;
+    const hint = !this.panel ? "↑↓ select · ←→ active · all · ↵ focus · F fit · R reset · Esc close"
+      : W >= 1000 ? "↑↓ select · ←→ active · all · ↵ focus · F fit · R reset" : null;
+    // Active | All (← / →), each with what it shows: decided each time the panel opens (lib openOnActive), then yours.
+    const pick = (active) => { if (this.activeOnly !== active) { this.activeOnly = active; this.view = null; } };
+    const seg = (id, active, label, count, tip) => h_flex().id(id).h(20).px(8).gap(5).items_center().rounded(5).text_size(12).cursor_pointer()
+      .tooltip(tip).text_color(this.activeOnly === active ? t.foreground : t.muted).when(this.activeOnly === active, (el) => el.bg(t.background))
+      .hover((s) => s.text_color(t.foreground)).on_click((_e, cx) => { pick(active); cx.notify(); })
+      .child(label).child(div().text_size(11).text_color(t.dim).child(String(count)));
     return h_flex().flex_none().items_center().border_b(1).border_color(t.border)
       .map((el) => this.panel ? el.h(42).px(14).gap(8) : el.h(40).px(16).gap(12))
       .child(div().flex_none().text_size(this.panel ? 13 : 15).font_semibold().child("Agents"))
-      .child(h_flex().min_w(0).overflow_hidden().gap(narrow ? 4 : 6).items_center().children(counts.map(([s, n]) => {
-        const loud = s === "blocked";
-        const c = h_flex().h(20).px(narrow ? 6 : 8).gap(narrow ? 4 : 6).flex_none().items_center().rounded(6)
-          .bg(loud ? alpha(t.blocked, 0.14) : t.raised).text_size(11).text_color(loud ? t.blocked : t.muted).child(this.dot(t, s, 6));
-        return narrow ? c.id(`ag-count-${s}`).tooltip(`${n} ${s}`).child(String(n)) : c.child(`${n} ${s}`);
-      })))
       .child(div().flex_1())
       .when(!!hint, (el) => el.child(div().flex_none().text_size(11).text_color(t.dim).child(hint)))
-      .child(button("ag-active", "Hide idle agents and terminals", () => {
-        this.activeOnly = !on;
-        localStorage.setItem("activeOnly", on ? "0" : "1");
-        this.view = null;
-      }).when(on, (el) => el.text_color(t.foreground)).when(!label, icon)
-        .child(div().size(12).flex_none().flex().items_center().justify_center().rounded(3).border(1)
-          .border_color(on ? t.accent : t.input).when(on, (el) => el.bg(t.accent))
-          .when(on, (el) => el.child(svg(ICON("check")).size(10).text_color(t.accent_foreground))))
-        .when(label, (el) => el.child("Active only")))
+      // The view's controls sit on the right, the filter first, by refresh and expand.
+      .child(h_flex().id("ag-filter").h(24).p(2).gap(2).flex_none().items_center().rounded(7).bg(t.raised)
+        .child(seg("ag-active", true, "Active", n.active, "Agents working, needing you or finished (←)"))
+        .child(seg("ag-all", false, "All", n.all, "Every agent and terminal (→)")))
       .child(icon(button("ag-refresh", "Refresh git and PRs", (cx) => this.refresh(cx, true)))
         .child(svg(ICON("refresh")).size(13).when(this.busy, (el) => el.spin(900))))
       .when(this.panel, (el) => el.child(icon(button("ag-expand", "Open in window", () => run("mod.open", { name: "agent-graph" })))
@@ -337,14 +330,14 @@ export default class AgentGraph extends View {
         .when(!none, (el) => el.cursor_pointer().hover((s) => s.bg(t.hover)).tooltip(`Every worktree of ${r.name}`).on_click(() => this.worktrees(r)))
         .child(svg(ICON(none ? "folder" : "repo")).size(14).flex_none().text_color(t.muted))
         .child(div().flex_1().min_w(0).truncate().font_semibold().text_color(none ? t.muted : t.foreground).child(r.name))
-        .when(!!r.machine, (el) => el.child(div().flex_none().text_size(11).font_family(MONO).text_color(t.dim).child(r.machine))));
+        .when(!!r.machine, (el) => el.child(div().flex_none().text_size(11).text_color(t.dim).child(r.machine))));
       for (const w of r.worktrees) {
         const git = w.kind === "worktree";
         const ab = git && (w.ahead || w.behind) ? [w.ahead && `↑${w.ahead}`, w.behind && `↓${w.behind}`].filter(Boolean).join(" ") : "";
         rows.push(row(`l:${w.id}`, 1).border_1().border_color(ring.has(`w:${w.id}`) ? t.accent : alpha(t.border, 0))
           .child(svg(ICON(git ? "branch" : "folder")).size(14).flex_none().text_color(t.muted))
-          .child(div().flex_1().min_w(0).truncate().text_size(12).font_family(MONO).text_color(t.foreground).child(git ? w.branch ?? "detached" : w.name))
-          .when(!!ab, (el) => el.child(div().flex_none().text_size(11).font_family(MONO).text_color(t.dim).child(ab)))
+          .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.foreground).child(git ? w.branch ?? "detached" : w.name))
+          .when(!!ab, (el) => el.child(div().flex_none().text_size(11).text_color(t.dim).child(ab)))
           .when(!!w.pr, (el) => el.child(this.chip(t, w, 1))));
         for (const a of w.agents) agent(a, 2);
       }
@@ -408,7 +401,7 @@ export default class AgentGraph extends View {
         .on_click((_e, cx) => { action[1](); cx.notify(); }).child(action[0]))));
     if (!items.some((i) => i.agent)) return quiet("No agents running.", "Start an agent (Claude Code, Codex, pi…) in any terminal and it appears here. Sub-agents started with hc run hang off their parent.");
     if (!this.loaded) return quiet("Reading repositories…");
-    if (!tree.length) return quiet("Nothing active right now.", null, ["Show idle", () => { this.activeOnly = false; localStorage.setItem("activeOnly", "0"); }]);
+    if (!tree.length) return quiet("Nothing active right now.", null, ["Show all", () => { this.activeOnly = false; }]);
 
     this.fitted = this.fitView(L);
     const v = this.view ?? this.fitted, z = v.z, W = this.size.width, H = this.size.height;
@@ -478,7 +471,7 @@ export default class AgentGraph extends View {
           .child(div().min_w(0).truncate().text_size(15 * z).font_semibold().text_color(none ? t.muted : t.foreground).child(d.name)))
         .child(h_flex().gap(6 * z).items_center().text_size(11 * z).text_color(t.dim)
           .when(!!d.machine, (el) => el.child(svg(ICON("server")).size(11 * z).flex_none()))
-          .child(div().min_w(0).truncate().when(!!d.machine, (el) => el.font_family(MONO)).child(meta)));
+          .child(div().min_w(0).truncate().child(meta)));
     }
     if (n.kind === "worktree") {
       const git = d.kind === "worktree";
@@ -487,10 +480,10 @@ export default class AgentGraph extends View {
       return this.ring(t, this.card(t, n, x, y, z), n, z, isFoc)
         .child(h_flex().gap(8 * z).items_center()
           .child(svg(ICON(git ? "branch" : "folder")).size(14 * z).flex_none().text_color(t.muted))
-          .child(div().flex_1().min_w(0).truncate().text_size(13 * z).font_family(MONO).text_color(t.foreground).child(git ? d.branch ?? "detached" : d.name))
-          .when(!!ab, (el) => el.child(div().flex_none().text_size(11 * z).font_family(MONO).text_color(t.dim).child(ab))))
+          .child(div().flex_1().min_w(0).truncate().text_size(13 * z).text_color(t.foreground).child(git ? d.branch ?? "detached" : d.name))
+          .when(!!ab, (el) => el.child(div().flex_none().text_size(11 * z).text_color(t.dim).child(ab))))
         .child(h_flex().gap(8 * z).items_center()
-          .child(div().flex_1().min_w(0).truncate().text_size(11 * z).font_family(MONO).text_color(t.dim).child(path))
+          .child(div().flex_1().min_w(0).truncate().text_size(11 * z).text_color(t.dim).child(path))
           .when(!!d.pr, (el) => el.child(this.chip(t, d, z))));
     }
     const loud = d.status === "blocked", tone = loud ? t.blocked : d.status === "working" ? t.working : null; // working stands out too

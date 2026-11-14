@@ -136,3 +136,12 @@ export function ringed(repos, cursor, foc) {
 // Inbox and Spaces each share their cursor (null without the keyboard); while it moves between them both can be
 // set for a moment, and the newer one is where it went.
 export const sidebarCursor = (inbox, spaces) => (inbox && spaces ? (inbox.at > spaces.at ? inbox : spaces) : inbox ?? spaces ?? null);
+
+// How the panel opens, each time (nothing remembered): on Active when an agent works or needs you, else on All.
+export const openOnActive = (items) => items.some((i) => i.agent && (i.status === "working" || i.status === "blocked"));
+
+// The Active | All switch's counts: Active is what the Active view shows (every agent but the idle), All every agent.
+export function filterCounts(items) {
+  const agents = items.filter((i) => i.agent);
+  return { active: agents.filter((i) => i.status !== "idle").length, all: agents.length };
+}
