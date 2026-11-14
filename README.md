@@ -86,8 +86,9 @@ Usage keeps every session it has read.</td>
 - **Inbox**: every agent waiting on you, newest first, including a blocked sub-agent another agent started (click to
   peek at it); Settle puts one away.
 - **Ports**: every server listening on this Mac and the agent that started it. One started outside Herdr says by
-  what ("Claude app", "Codex in iTerm"); "Claude ended" means the agent session that started it has ended but the server still runs (amber past an hour); a half-strength icon means probably that agent (started in the background, matched by
-  folder); a globe means your network can reach it. Click (or ↵) for its card: address, agent, command, uptime, CPU
+  what ("Claude app", "Codex in iTerm"); "Claude ended" means the session that started it has ended but the server
+  still runs (amber past an hour); a half-strength icon means probably that agent (started in the background, matched
+  by folder); a globe means your network can reach it. Click (or ↵) for its card: address, agent, command, uptime, CPU
   and memory, with Open, Go to agent and Stop (asks first, and checks the process still holds the port).
 - **Working N**, the last row: opens the graph on what's working (everything at 0).
 - **Sizes**: open, rail, dots (⌘B, ⌘⌥B).
