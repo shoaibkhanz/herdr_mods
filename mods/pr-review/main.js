@@ -10,7 +10,7 @@ import { exec, focused, panes, spaces, theme, settings, props, shared, setShared
 import * as github from "./github.js";
 import * as gitlab from "./gitlab.js";
 import { forgeOrder } from "./gitlab-map.js";
-import { parseDiff, selectRange, commentPayload, anchorThreads, ago, firstVisible, fileTree, TAGS, tagBody, splitTag, shown, findAll, findTalk, mentions, gapBefore, hiddenRows, pairRows } from "./lib.js";
+import { parseDiff, selectRange, commentPayload, anchorThreads, ago, firstVisible, fileTree, TAGS, tagBody, splitTag, shown, findAll, findTalk, mentions, gapBefore, hiddenRows, pairRows, tabArrows } from "./lib.js";
 
 const MONO = "Geist Mono";
 const icon = (name) => svg(`mods/pr-review/${name}.svg`);
@@ -340,7 +340,8 @@ export default class PrReview extends View {
     const key = this.basePick === "head" ? "pr-review.heads" : "pr-review.bases";
     setShared(key, { ...shared(key), [s.id.repo]: b });
     this.closeBase();
-    if (s.diffs.has("local")) this.open(s, "local", cx, true);
+    s.cursor = 0; s.level = "pr"; // picking a side shows that compare at once
+    this.open(s, "local", cx, true);
   }
 
   closeBase() { this.basePick = false; this.unfocus(); }
@@ -362,30 +363,24 @@ export default class PrReview extends View {
           .child(Input.new(this.baseQ).id("base-input").flex_1().h_full().text_size(13)))
         .child(this.iconBtn("base-close", "x", "Close  Esc", () => this.closeBase())))
       .child(v_flex().id("base-list").max_h(240).overflow_y_scrollbar().pb(6)
-        .children(list.map((b) => h_flex().id(`base-${b ?? "here"}`).h(28).px(16).gap(8).items_center().cursor_pointer().font_family(MONO).text_size(12)
+        .children(list.map((b) => h_flex().id(`base-${b ?? "here"}`).h(28).px(16).gap(8).items_center().cursor_pointer().text_size(12)
           .text_color(b === cur ? t.accent : t.foreground).hover((x) => x.bg(t.hover))
           .on_click((_e, cx) => { this.pickBase(s, b, cx); cx.notify(); })
           .child(div().min_w(0).truncate().child(b ?? `${s.branch} (with uncommitted)`))))
         .when(!list.length, (el) => el.child(div().px(16).py(6).text_size(12).text_color(t.muted).child(s.branches ? "No branch matches." : "Loading branches…"))));
   }
 
-  // The compare's own bar, under "This branch"'s header: Compare [head ▾] with [base ▾], each a dropdown, and the
-  // open side's picker under it.
-  compareBar(t, s) {
-    const chip = (side) => {
-      const on = this.basePick === side, head = side === "head";
-      return h_flex().id(`${side}-chip`).h(28).min_w(0).px(10).gap(6).items_center().rounded(6).border_1().cursor_pointer().text_size(12)
-        .border_color(on ? t.accent : t.border).bg(on ? t.selected : t.background).hover((x) => x.border_color(t.accent))
-        .tooltip(head ? "Pick the branch whose changes to show" : "Pick the branch to compare with").on_mouse_down("left", field)
-        .on_click((_e, cx) => { if (on) this.closeBase(); else this.openBase(s, cx, side); cx.notify(); })
-        .child(icon(head ? "git-branch" : "git-compare").size(14).flex_none().text_color(t.dim))
-        .child(div().min_w(0).truncate().font_family(MONO).child(head ? this.headOf(s) ?? `${s.branch} (this branch)` : this.baseOf(s)))
-        .child(icon("chevron-down").size(12).flex_none().text_color(t.dim));
-    };
-    return v_flex().flex_none()
-      .child(h_flex().h(44).flex_none().px(16).gap(8).items_center().border_b(1).border_color(t.border).text_size(12).text_color(t.muted)
-        .child("Compare").child(chip("head")).child("with").child(chip("base")))
-      .when(Boolean(this.basePick), (el) => el.child(this.basePicker(t, s)));
+  // One side of the compare as the rail's first row shows it ("head" or "base"): its branch with a ▾, which opens the
+  // picker under the row. The sidebar is the one place to pick either side.
+  sideChip(t, s, side) {
+    const on = this.basePick === side, head = side === "head";
+    return h_flex().id(`${side}-chip`).min_w(0).h(20).px(4).gap(4).items_center().rounded(5).cursor_pointer()
+      .when(on, (el) => el.bg(t.raised)).hover((x) => x.bg(t.raised))
+      .tooltip(head ? "Pick the branch whose changes to show" : "Pick the branch to compare with")
+      .on_mouse_down("left", field)
+      .on_click((_e, cx) => { cx.stop_propagation(); if (on) this.closeBase(); else this.openBase(s, cx, side); cx.notify(); })
+      .child(div().min_w(0).truncate().text_size(12).text_color(t.foreground).child(head ? this.headOf(s) ?? s.branch ?? "this branch" : this.baseOf(s)))
+      .child(icon("chevron-down").size(11).flex_none().text_color(on ? t.foreground : t.dim));
   }
 
   // A diff in place: it stays on the same file, wherever that now sits. `at` (the head it's from) comes with the next comments.
@@ -562,9 +557,9 @@ export default class PrReview extends View {
       else if (!this.panel) return this.dismiss();
       else return run("tabs-plus.back"); // nothing left to step out of: back to the terminal
     } else if (this.typing) return;
-    // The PR list's search and ← / → over its Open / Closed / All (as every panel's arrows walk its tabs), only where the list shows.
+    // The PR list's search, and ← / → over its Open / Closed / All only while ↑ / ↓ walk the list too (lib tabArrows).
     else if (k === "/" && !this.inSearch && s && this.listShows(s)) this.search.focus();
-    else if (s && (e.keystroke === "left" || e.keystroke === "right") && !this.inSearch && this.listShows(s)) {
+    else if (s && (e.keystroke === "left" || e.keystroke === "right") && tabArrows({ listShows: this.listShows(s), filesOpen: !!this.openFiles(s), inSearch: this.inSearch })) {
       const i = STATES.findIndex(([x]) => x === s.state);
       s.state = STATES[(i + (k === "right" ? 1 : STATES.length - 1)) % STATES.length][0];
       this.loadPRs(s, cx);
@@ -802,7 +797,7 @@ export default class PrReview extends View {
     const btn = (...a) => this.iconBtn(...a);
     const busy = Boolean(s?.loading || s?.prsLoading || s?.diffs?.get(s.entry)?.loading);
     const where = (el) => el
-      .when(Boolean(s?.branch), (el) => el.child(div().min_w(0).truncate().font_family(MONO).text_size(12).text_color(t.muted).child(s.branch)))
+      .when(Boolean(s?.branch), (el) => el.child(div().min_w(0).truncate().text_size(12).text_color(t.muted).child(s.branch)))
       .when(Boolean(s?.id?.machine), (el) => el.child(div().flex_none().text_size(11).text_color(t.dim).child(`on ${s.id.machine}`)));
     const refresh = btn("pr-refresh", "refresh", "Refresh", (cx) => this.refresh(cx), busy);
     if (this.panel) {
@@ -861,7 +856,7 @@ export default class PrReview extends View {
 
   counts(t, add, del) {
     if (add == null) return div(); // GitLab's MR list has no line counts
-    return h_flex().gap(6).flex_none().font_family(MONO).text_size(11)
+    return h_flex().gap(6).flex_none().text_size(11)
       .child(div().text_color(t.done).child(`+${add}`))
       .child(div().text_color(t.blocked).child(`−${del}`));
   }
@@ -878,10 +873,28 @@ export default class PrReview extends View {
       .child(content);
     const empty = s.prsError ?? (s.prs == null ? "Loading pull requests…" : prs.length ? null
       : s.search.trim() ? `No pull requests match “${s.search.trim()}”.` : `No ${s.state === "all" ? "" : s.state + " "}pull requests.`);
+    // Two kinds of comparison, each under its own header: the branches you pick, and the PRs, each bringing its own
+    // pair (its branch → the one it merges into). Search and Open · Closed · All filter the PRs only.
+    const section = (label) => div().px(20).pt(12).pb(6).flex_none().text_size(11.5).font_medium().text_color(t.dim).child(label);
     return v_flex().h_full()
       .when(full, (el) => el.flex_1().min_w(0))
       .when(!full, (el) => el.w(280).flex_none().bg(t.surface).border_r(1).border_color(t.border))
-      .child(v_flex().p(12).gap(8).flex_none()
+      .child(section("Compare two branches"))
+      // Click the row to show the compare, a side's ▾ to pick that branch (the picker opens right under).
+      .child(row(0, s.entry === "local", "local", h_flex().flex_1().min_w(0).gap(10).items_center()
+        .child(icon("git-branch").size(14).flex_none().text_color(t.muted))
+        // One line, as a PR row's "head → base": the head shortens first, "vs base ▾" stays whole. Under it, what it covers.
+        .child(v_flex().flex_1().min_w(0).gap(2)
+          .child(h_flex().min_w(0).gap(2).items_center()
+            .child(this.sideChip(t, s, "head"))
+            .child(div().flex_none().px(2).text_size(11).text_color(t.dim).child("vs"))
+            .child(div().flex_none().child(this.sideChip(t, s, "base"))))
+          .child(div().px(4).truncate().text_size(11).text_color(t.dim)
+            .child(this.headOf(s) ? "Committed changes only" : "Includes uncommitted changes")))))
+      .when(Boolean(this.basePick), (el) => el.child(div().mx(8).mt(4).flex_none().rounded(8).overflow_hidden().border_1().border_color(t.border).child(this.basePicker(t, s))))
+      .child(div().h(1).flex_none().mx(20).mt(12).bg(t.border))
+      .child(section("Pull requests"))
+      .child(v_flex().px(12).pb(8).gap(8).flex_none()
         .child(h_flex().h(32).px(10).gap(8).items_center().rounded(8).bg(t.background).border_1().border_color(this.inSearch ? t.accent : t.input).on_mouse_down("left", field)
           .child(icon("search").size(14).flex_none().text_color(t.dim))
           .child(Input.new(this.search).id("pr-search").flex_1().h_full().text_size(13)))
@@ -892,21 +905,19 @@ export default class PrReview extends View {
             .on_click((_e, cx) => { if (s.state !== k) { s.state = k; this.loadPRs(s, cx); } cx.notify(); })
             .child(label)))))
       .child(v_flex().id("pr-list").flex_1().min_h(0).overflow_y_scrollbar().pb(8)
-        .child(row(0, s.entry === "local", "local", h_flex().flex_1().min_w(0).gap(10).items_center()
-          .child(icon("git-branch").size(14).flex_none().text_color(t.muted))
-          .child(v_flex().flex_1().min_w(0).gap(4)
-            .child(div().truncate().child(this.compareTitle(s)))
-            .child(div().truncate().font_family(MONO).text_size(11).text_color(t.dim).child(this.headOf(s) ?? s.branch)))))
-        .child(div().h(1).flex_none().mx(20).my(8).bg(t.border))
+        // Each PR says what it compares: its branch → the one it merges into (set by the PR, not by the picks above).
+        // Line 2 keeps "→ base" whole: the PR's own branch shortens first. Counts are in the PR's header once open.
         .children(prs.map((p, i) => row(i + 1, s.entry === p.number, p.number, v_flex().flex_1().min_w(0).gap(4)
           .child(h_flex().gap(8).items_center()
             .child(div().flex_1().min_w(0).truncate().child(p.title))
-            .child(div().flex_none().text_size(11).text_color(t.dim).child(ago(p.updatedAt))))
-          .child(h_flex().gap(8).items_center()
-            .child(div().flex_none().font_family(MONO).text_size(11).text_color(t.dim).child(`#${p.number}`))
-            .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.muted).child(p.author?.login ?? ""))
-            .child(this.counts(t, p.additions, p.deletions))
-            .child(this.stateChip(t, p))))))
+            .child(this.stateChip(t, p)))
+          .child(h_flex().id(`pr-pair-${p.number}`).gap(4).items_center().text_size(11).text_color(t.dim)
+            .tooltip(`${p.headRefName ?? "?"} → ${p.baseRefName ?? "?"}${p.author?.login ? ` · by ${p.author.login}` : ""}`)
+            .child(div().flex_none().child(`#${p.number} ·`))
+            .child(div().min_w(0).truncate().child(p.headRefName ?? "?"))
+            .child(div().flex_none().child(`→ ${p.baseRefName ?? "?"}`))
+            .child(div().flex_1())
+            .child(div().flex_none().text_size(11).child(ago(p.updatedAt)))))))
         .when(Boolean(empty), (el) => el.child(div().px(20).py(8).text_center().text_size(13).text_color(t.muted).child(empty))));
   }
 
@@ -942,11 +953,11 @@ export default class PrReview extends View {
       .child(this.iconBtn("rail-toggle", this.railOpen ? "panel-left-close" : "panel-left-open", this.railOpen ? "Hide pull requests" : "Show pull requests", () => (this.railOpen = !this.railOpen)))
       .child(v_flex().flex_1().min_w(0).gap(4)
         .child(h_flex().gap(8).items_center()
-          .when(!local, (el) => el.child(div().flex_none().font_family(MONO).text_size(13).text_color(t.dim).child(`#${s.entry}`)))
+          .when(!local, (el) => el.child(div().flex_none().text_size(13).text_color(t.dim).child(`#${s.entry}`)))
           .child(div().min_w(0).truncate().text_size(15).font_semibold().child(title))
           .when(Boolean(pr), (el) => el.child(this.stateChip(t, pr))))
         .child(h_flex().gap(8).items_center().text_size(12).text_color(t.muted)
-          .child(div().min_w(0).truncate().font_family(MONO).text_size(11).text_color(t.dim).child(sub))
+          .child(div().min_w(0).truncate().text_size(11).text_color(t.dim).child(sub))
           .when(Boolean(pr), (el) => el.child(div().flex_none().child(`${pr.author?.login ?? ""} · ${ago(pr.updatedAt)}`)))))
       .when(files.length > 0, (el) => el
         .child(this.counts(t, files.reduce((a, f) => a + f.additions, 0), files.reduce((a, f) => a + f.deletions, 0)))
@@ -957,7 +968,7 @@ export default class PrReview extends View {
           .child(`${files.length} file${files.length === 1 ? "" : "s"}`)))
       .when(Boolean(d.talk), (el) => el.child(this.paneToggle(t, d, "talk")))
       .when(d.commits?.length > 0, (el) => el.child(this.paneToggle(t, d, "commits")));
-    const top = v_flex().flex_1().min_w(0).h_full().when(!bare, (el) => el.child(head)).when(local && !bare, (el) => el.child(this.compareBar(t, s)))
+    const top = v_flex().flex_1().min_w(0).h_full().when(!bare, (el) => el.child(head))
       .when(Boolean(d.commit), (el) => el.child(this.commitBar(t, s, d)));
     if (d.pane) return top.child(this.paneView(t, s, d));
     if (quiet) return top.child(this.quiet(t, quiet));
@@ -1041,7 +1052,7 @@ export default class PrReview extends View {
       .when(on, (x) => x.bg(t.selected)).when(!on, (x) => x.hover((h) => h.bg(t.hover)))
       .on_click((_e, cx) => { this.pickCommit(s, d, oid, cx); cx.notify(); })
       .child(div().w(8 + w * 8).flex_none().text_size(11).text_color(t.dim).child(n))
-      .child(div().w(64).flex_none().font_family(MONO).text_size(11).text_color(on ? t.accent : t.dim).child(sha))
+      .child(div().w(64).flex_none().text_size(11).text_color(on ? t.accent : t.dim).child(sha))
       .child(div().flex_1().min_w(0).truncate().text_size(13).text_color(t.foreground).when(on, (x) => x.font_medium()).child(title))
       .child(div().flex_none().text_size(12).text_color(t.muted).child(meta));
     return v_flex().id("commits").flex_1().min_h(0).overflow_y_scrollbar()
@@ -1055,7 +1066,7 @@ export default class PrReview extends View {
     return h_flex().h(36).flex_none().pl(16).pr(8).gap(8).items_center().bg(t.surface).border_b(1).border_color(t.border).text_size(12)
       .child(icon("git-commit").size(14).flex_none().text_color(t.accent))
       .child(div().flex_none().text_color(t.muted).child(`Commit ${i + 1} of ${cs.length}`))
-      .child(div().flex_none().font_family(MONO).text_size(11).text_color(t.accent).child(d.commit.slice(0, 7)))
+      .child(div().flex_none().text_size(11).text_color(t.accent).child(d.commit.slice(0, 7)))
       .child(div().flex_1().min_w(0).truncate().text_color(d.commitError ? t.blocked : t.foreground)
         .child(d.commitError ? `Couldn't load it: ${d.commitError}` : d.commitLoading ? "Loading…" : cs[i]?.headline ?? ""))
       .when(i > 0, (el) => el.child(this.iconBtn("commit-prev", "chevron-left", "Previous commit  [", step(-1))))
@@ -1073,13 +1084,12 @@ export default class PrReview extends View {
         .child(div().text_size(15).font_semibold().child(title))
         .child(h_flex().flex_wrap().gap(8).items_center()
           .when(Boolean(pr), (el) => el.child(this.stateChip(t, pr)))
-          .when(!local, (el) => el.child(div().flex_none().font_family(MONO).text_size(12).text_color(t.dim).child(`#${s.entry}`)))
+          .when(!local, (el) => el.child(div().flex_none().text_size(12).text_color(t.dim).child(`#${s.entry}`)))
           .when(Boolean(pr), (el) => el.child(div().flex_none().text_size(12).text_color(t.muted).child(`${pr.author?.login ?? ""} · ${ago(pr.updatedAt)}`)))
           .when(files.length > 0, (el) => el.child(this.counts(t, files.reduce((a, f) => a + f.additions, 0), files.reduce((a, f) => a + f.deletions, 0))))
           .when(Boolean(d.talk), (el) => el.child(this.paneToggle(t, d, "talk")))
           .when(d.commits?.length > 0, (el) => el.child(this.paneToggle(t, d, "commits"))))
-        .child(div().font_family(MONO).text_size(11).text_color(t.dim).child(sub)))
-      .when(local, (el) => el.child(this.compareBar(t, s)))
+        .child(div().text_size(11).text_color(t.dim).child(sub)))
       .when(Boolean(d.commit), (el) => el.child(this.commitBar(t, s, d)))
       .when(Boolean(d.threadsError), (el) => el.child(this.threadsBanner(t, d)))
       .when(Boolean(d.pane), (el) => el.child(this.paneView(t, s, d)))
@@ -1177,11 +1187,11 @@ export default class PrReview extends View {
   // A hunk header, or the file's end, that opens the lines hidden there.
   gapRow(t, s, d, f, it, at, label) {
     const n = this.gapAt(f, at), open = this.canExpand(f) && n > 0 && !f.expanding;
-    return h_flex().id(it.key).h(it.h).pl(GUTTER).pr(16).gap(8).items_center().bg(t.surface).font_family(MONO).text_size(11).text_color(t.dim)
+    return h_flex().id(it.key).h(it.h).pl(GUTTER).pr(16).gap(8).items_center().bg(t.surface).text_size(11).text_color(t.dim)
       .when(open, (el) => el.cursor_pointer().hover((x) => x.text_color(t.foreground)).tooltip(n === Infinity ? "Show the rest of the file" : `Show ${n} unchanged line${n === 1 ? "" : "s"}`)
         .on_mouse_down("left", (_e, cx) => cx.stop_propagation()).on_click((_e, cx) => { this.expand(s, d, f, [at], cx); cx.notify(); }))
-      .child(div().flex_1().min_w(0).truncate().child(label))
-      .when(open, (el) => el.child(h_flex().flex_none().gap(4).items_center().font_family("Geist").child(icon("unfold-vertical").size(12))
+      .child(div().flex_1().min_w(0).truncate().font_family(MONO).child(label)) // the hunk header is the diff's own text
+      .when(open, (el) => el.child(h_flex().flex_none().gap(4).items_center().child(icon("unfold-vertical").size(12))
         .child(n === Infinity ? "Rest of the file" : `${n} line${n === 1 ? "" : "s"}`)));
   }
 
@@ -1253,8 +1263,8 @@ export default class PrReview extends View {
       .on_click((_e, cx) => { this.stepFile(s, d, by); cx.notify(); })
       .child(icon(name).size(14));
     return h_flex().h(H.file).flex_none().pl(16).pr(12).gap(8).items_center().bg(t.surface).border_b(1).border_color(t.border)
-      .child(div().min_w(0).truncate().font_family(MONO).text_size(12).font_medium().child(f.path))
-      .when(f.status === "renamed", (el) => el.child(div().min_w(0).truncate().font_family(MONO).text_size(11).text_color(t.dim).child(`from ${f.oldPath}`)))
+      .child(div().min_w(0).truncate().text_size(12).font_medium().child(f.path))
+      .when(f.status === "renamed", (el) => el.child(div().min_w(0).truncate().text_size(11).text_color(t.dim).child(`from ${f.oldPath}`)))
       .child(div().flex_1())
       .when(Boolean(f.expandError), (el) => el.child(div().flex_none().max_w(260).truncate().text_size(11).text_color(t.blocked).child(`Couldn't show more: ${f.expandError}`)))
       .when(Boolean(label), (el) => el.child(this.chip(t, label, { deleted: t.blocked, added: t.done }[f.status] ?? t.idle)))
@@ -1358,7 +1368,7 @@ export default class PrReview extends View {
     return card
       .child(h_flex().h(36).px(12).gap(8).items_center().border_b(1).border_color(t.border)
         .when(th.isResolved, (el) => el.child(toggle.child(icon("chevron-down").size(13).text_color(t.dim))))
-        .child(div().font_family(MONO).text_size(11).text_color(t.dim).child(`${th.diffSide === "LEFT" ? "old · " : ""}${lines}`))
+        .child(div().text_size(11).text_color(t.dim).child(`${th.diffSide === "LEFT" ? "old · " : ""}${lines}`))
         .when(th.isOutdated, (el) => el.child(this.chip(t, "Outdated", t.idle)))
         .when(th.isResolved, (el) => el.child(this.chip(t, "Resolved", t.done)))
         .child(div().flex_1())

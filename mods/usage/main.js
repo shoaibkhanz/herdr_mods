@@ -4,10 +4,9 @@
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
-import { exec, appHome, theme, settings, props, run, layout, shared, setShared } from "herdr";
-import { summarize, outputOf, heat, levels, startOfDay, addDays, DAY, KINDS, LENGTHS, span, keepOf } from "./lib.js";
+import { exec, appHome, theme, settings, props, run, layout, shared, setShared, closeOverlay } from "herdr";
+import { summarize, outputOf, heat, levels, startOfDay, addDays, DAY, KINDS, LENGTHS, span, keepOf, tabAfter } from "./lib.js";
 
-const MONO = "Geist Mono";
 const RANGES = [[7, "7d"], [30, "30d"], [90, "90d"], [365, "1y"], ["custom", "Custom"]];
 // In the order worth looking at: the picture, which harness serves you best, what got delivered, then the detail.
 const TABS = [["overview", "Overview"], ["compare", "Compare"], ["output", "Output"], ["harnesses", "Harnesses"], ["rhythm", "Rhythm"]];
@@ -69,6 +68,8 @@ export default class Usage extends View {
     this.custom = saved ?? { from: addDays(Date.now(), -13), to: startOfDay(Date.now()) };
     this.fromInput = InputState.new({ value: iso(this.custom.from), placeholder: "YYYY-MM-DD" });
     this.toInput = InputState.new({ value: iso(this.custom.to), placeholder: "YYYY-MM-DD" });
+    this.typing = 0; // date fields with the caret: ← / → are theirs then (lib tabAfter)
+    for (const input of [this.fromInput, this.toInput]) { input.on("focus", () => this.typing++); input.on("blur", () => (this.typing = Math.max(0, this.typing - 1))); }
     for (const [input, end] of [[this.fromInput, "from"], [this.toInput, "to"]]) input.on("change", (_e, cx) => {
       const t = parse(input.value());
       // Kept as typed (ends put in order where they're read), so editing one box never moves the other end.
@@ -193,7 +194,7 @@ export default class Usage extends View {
           : this.sel ? `${o.commits} commits · +${short(o.add)} −${short(o.del)}` : "hover a bar for its day · press or drag to pick days"))));
     const w = this.innerW(), top = Math.max(1, ...o.repos.map((x) => x.commits));
     const where = this.card(t, "Where you committed", null, v_flex().gap(4).children(o.repos.map((x) => h_flex().h(20).gap(8).items_center().text_size(12)
-      .child(div().w(110).flex_none().truncate().font_family(MONO).child(base(x.repo)))
+      .child(div().w(110).flex_none().truncate().child(base(x.repo)))
       .child(div().w(Math.max(40, w - 110 - 90 - 16)).h(8).rounded(3).bg(t.raised).child(div().h(8).rounded(3).w(Math.max(2, (x.commits / top) * Math.max(40, w - 216))).bg(t.accent)))
       .child(div().w(90).text_size(11).text_color(t.dim).child(`${x.commits} · +${short(x.add)}`)))));
     // Agent spend against what it delivered (recorded cost only; Codex records none).
@@ -203,7 +204,7 @@ export default class Usage extends View {
       ["Tokens per commit", o.commits ? short(r.tiles.tokens / o.commits) : "–"], ["Commits per agent run", r.tiles.sessions ? (o.commits / r.tiles.sessions).toFixed(1) : "–"],
     ].map(([label, value]) => h_flex().h(22).items_center().justify_between().text_size(12).child(div().text_color(t.muted).child(label)).child(div().font_semibold().child(value)))));
     const prs = o.recent.length ? this.card(t, "Recent pull requests", null, v_flex().gap(2).children(o.recent.map((x) => h_flex().h(24).gap(8).items_center().text_size(12)
-      .child(div().w(44).flex_none().font_family(MONO).text_color(t.muted).child(`#${x.n}`)).child(div().flex_1().min_w(0).truncate().font_family(MONO).child(base(x.repo)))
+      .child(div().w(44).flex_none().text_color(t.muted).child(`#${x.n}`)).child(div().flex_1().min_w(0).truncate().child(base(x.repo)))
       .child(h_flex().h(18).px(6).flex_none().items_center().rounded(5).text_size(11)
         .bg(alpha(x.state === "merged" ? t.done : x.state === "open" ? t.accent : t.dim, 0.16)).text_color(x.state === "merged" ? t.done : x.state === "open" ? t.accent : t.dim).child(x.state))
       .child(div().w(130).flex_none().whitespace_nowrap().text_size(11).text_color(t.dim).child(x.merged ? `merged in ${mins((x.merged - x.created) / 60000)}` : date(x.created)))))) : null;
@@ -236,7 +237,7 @@ export default class Usage extends View {
     // panel's own press-to-focus doesn't take the box's focus.
     const field = (state) => h_flex().on_mouse_down("left", (_e, cx) => cx.stop_propagation())
       .child(Input.new(state).w(104).h(24).px(8).items_center().rounded(6).border(1).border_color(t.input).bg(t.background)
-        .text_size(12).font_family(MONO).text_color(t.foreground));
+        .text_size(12).text_color(t.foreground));
     return v_flex().flex_none().border_b(1).border_color(t.border)
       .child(h_flex().h(42).px(14).gap(8).items_center()
         .child(div().flex_none().text_size(13).font_semibold().child("Usage"))
@@ -245,7 +246,9 @@ export default class Usage extends View {
         .when(Boolean(data), (el) => el.child(div().flex_none().max_w(260).truncate().text_size(11).text_color(this.error ? t.blocked : t.dim)
           .child(this.busy ? "scanning…" : this.error ? `rescan failed: ${this.error}` : `scanned ${ago(data.scanned_at)}`)))
         .child(button("usage-refresh", "Rescan the session logs", svg("mods/agent-graph/refresh.svg").size(13), (_e, cx) => { this.scan(cx); cx.notify(); }))
-        .when(this.panel, (el) => el.child(button("usage-expand", "Open large", svg("mods/agent-graph/expand.svg").size(13), () => run("mod.open", { name: "usage" })))))
+        .when(this.panel, (el) => el.child(button("usage-expand", "Open large", svg("mods/agent-graph/expand.svg").size(13), () => run("mod.open", { name: "usage" }))))
+        .when(!this.panel && Boolean(props()?.overlay), (el) => el.child(div().id("usage-esc").flex_none().px(6).py(2).rounded(5).text_size(11).text_color(t.dim)
+          .cursor_pointer().hover((x) => x.bg(t.hover).text_color(t.foreground)).on_click(() => closeOverlay(props().overlay)).child("Esc"))))
       .when(this.range === "custom", (el) => el.child(h_flex().px(14).pb(10).gap(8).items_center().text_size(12).text_color(t.muted)
         .child("From").child(field(this.fromInput)).child("to").child(field(this.toInput))
         .child(div().text_size(11).text_color(t.dim).child(`${p.days} day${p.days === 1 ? "" : "s"}, both dates included · or click two days on the calendar`))))
@@ -359,7 +362,7 @@ export default class Usage extends View {
     const track = Math.max(60, this.width - 32 - 28 - 190 - 96 - 16), top = r.models[0]?.share || 1;
     return this.card(t, "Models", div().text_size(11).text_color(t.dim).child("by tokens"), v_flex().gap(6).children(r.models.map((m) => h_flex().id(`model-${m.model}`).h(22).gap(8).items_center()
       .tooltip(Object.entries(m.by).map(([h, n]) => `${HARNESS[h]?.name ?? h} ${short(n)}`).join(" · "))
-      .child(h_flex().w(190).gap(6).items_center().child(this.icon(t, m.h, 14)).child(div().min_w(0).truncate().text_size(12).font_family(MONO).child(m.model)))
+      .child(h_flex().w(190).gap(6).items_center().child(this.icon(t, m.h, 14)).child(div().min_w(0).truncate().text_size(12).child(m.model)))
       .child(div().w(track).h(6).rounded(3).bg(t.raised).child(div().h(6).rounded(3).w(Math.max(2, (m.share / top) * track)).bg(HARNESS[m.h].color)))
       .child(div().w(96).text_size(11).text_color(t.dim).child(`${short(m.tokens)} · ${pct(m.share)}`)))));
   }
@@ -503,7 +506,7 @@ export default class Usage extends View {
         .child(head("Token mix", bar)).child(head("$ / 1M tok", 72)).child(head("$ / 1K out", 72)).when(wide, (el) => el.child(head("Read : write", 72)).child(head("$ / commit", 72))))
       .children(rows.map((x) => h_flex().id(`anat-${x.h}-${x.model}`).h(28).gap(8).items_center()
         .child(h_flex().w(210).flex_none().min_w(0).gap(6).items_center().child(div().size(8).rounded(4).flex_none().bg(HARNESS[x.h].color)).child(this.icon(t, x.h, 14))
-          .child(div().min_w(0).truncate().text_size(12).font_family(MONO).text_color(t.muted).child(x.model)))
+          .child(div().min_w(0).truncate().text_size(12).text_color(t.muted).child(x.model)))
         .child(this.stack(t, x.mix, bar, 12))
         .child(div().w(72).flex_none().text_size(12).child(usd(x.per1M)))
         .child(div().w(72).flex_none().text_size(12).child(usd(x.per1kOut, 3)))
@@ -579,7 +582,7 @@ export default class Usage extends View {
         .when(this.hoverRow === `${x.h}|${x.model}`, (el) => el.bg(t.hover)).when(r.best === x, (el) => el.bg(alpha(t.done, 0.08)))
         .on_hover((h, cx) => { const key = `${x.h}|${x.model}`; if (h) this.hoverRow = key; else if (this.hoverRow === key) this.hoverRow = null; cx.notify(); })
         .child(h_flex().flex_1().min_w(0).gap(6).items_center().child(div().size(8).rounded(4).flex_none().bg(HARNESS[x.h].color)).child(this.icon(t, x.h, 14))
-          .child(div().flex_none().text_size(12).child(HARNESS[x.h].name)).child(div().min_w(0).truncate().text_size(12).font_family(MONO).text_color(t.muted).child(x.model))
+          .child(div().flex_none().text_size(12).child(HARNESS[x.h].name)).child(div().min_w(0).truncate().text_size(12).text_color(t.muted).child(x.model))
           .when(r.best === x, (el) => el.child(h_flex().h(18).px(6).flex_none().items_center().rounded(5).bg(alpha(t.done, 0.16)).text_size(11).text_color(t.done).child("best for you"))))
         .child(div().w(36).flex_none().text_size(12).child(String(x.n)))
         .child(this.ci(t, x.clean, t.done))
@@ -634,8 +637,9 @@ export default class Usage extends View {
       .on_key_down((e, cx) => {
         if (e.keystroke === "escape" && this.panel) return run("tabs-plus.back"); // back to the terminal
         if (e.keystroke !== "left" && e.keystroke !== "right") return;
-        const i = TABS.findIndex(([id]) => id === this.tab);
-        this.tab = TABS[(i + (e.keystroke === "right" ? 1 : TABS.length - 1)) % TABS.length][0];
+        const next = tabAfter(TABS, this.tab, e.keystroke, this.typing > 0);
+        if (!next) return; // a date field's caret
+        this.tab = next;
         localStorage.setItem("tab", this.tab);
         cx.stop_propagation();
         cx.notify();

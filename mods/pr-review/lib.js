@@ -210,3 +210,7 @@ export function pairRows(rows) {
   flush();
   return out;
 }
+
+// ← / → walk the PR list's Open · Closed · All only while ↑ / ↓ walk that list: once a PR's files are open (the rail
+// may still show beside them) the arrows are the files', and the search box keeps ← / → for its caret.
+export const tabArrows = ({ listShows, filesOpen, inSearch }) => listShows && !filesOpen && !inSearch;
