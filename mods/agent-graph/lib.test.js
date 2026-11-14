@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { buildTree, layout, prChip, prsByBranch, mrsAsPRs, parseRevParse, cleanTitle, SIZE, mix } from "./lib.js";
+import { buildTree, layout, prChip, prsByBranch, mrsAsPRs, parseRevParse, cleanTitle, SIZE, mix, ringed, sidebarCursor } from "./lib.js";
 
 const GIT = {
   "/r/app": { top: "/r/app", common: "/r/app/.git", branch: "main" },
@@ -90,4 +90,37 @@ test("mix blends two theme colours into an opaque one", () => {
   expect(mix("#000000", "#ffffff", 0.5)).toBe("#808080");
   expect(mix("#0e0e0e", "#ff0000", 0)).toBe("#0e0e0e");
   expect(mix("#102030ff", "#ffffff", 1)).toBe("#ffffff");
+});
+
+// The ring follows the level the sidebar's cursor is on, else the focused terminal.
+const RING_ITEMS = [
+  { id: "t1", cwd: "/r/app", status: "working", agent: true, name: "a", space: "s1" },
+  { id: "t2", cwd: "/r/app/.wt/feat", status: "idle", agent: true, name: "b", space: "s2" },
+  { id: "t3", parent: "t2", cwd: "/r/app/.wt/feat", status: "idle", agent: true, name: "c", space: "s2" },
+];
+const ringTree = () => buildTree(RING_ITEMS, git, () => undefined);
+
+test("ringed: no sidebar cursor rings the focused terminal's agent", () => {
+  expect([...ringed(ringTree(), null, "t1")]).toEqual(["a:t1"]);
+  expect([...ringed(ringTree(), null, null)]).toEqual([]);
+});
+
+test("ringed: an Inbox card rings its agent, not the focused one", () => {
+  expect([...ringed(ringTree(), { kind: "agent", id: "t3" }, "t1")]).toEqual(["a:t3"]);
+});
+
+test("ringed: a space rings the worktree its agents work in, not an agent", () => {
+  expect([...ringed(ringTree(), { kind: "space", id: "s2" }, "t1")]).toEqual(["w:|/r/app/.wt/feat"]);
+});
+
+test("ringed: an unopened worktree row rings that worktree's card", () => {
+  expect([...ringed(ringTree(), { kind: "worktree", on: null, path: "/r/app" }, "t1")]).toEqual(["w:|/r/app"]);
+});
+
+test("sidebarCursor: whichever list holds the keyboard; the newer one while the keyboard moves between them", () => {
+  const a = { kind: "agent", id: "t1", at: 5 }, s = { kind: "space", id: "s1", at: 9 };
+  expect(sidebarCursor(null, null)).toBe(null);
+  expect(sidebarCursor(a, null)).toBe(a);
+  expect(sidebarCursor(null, s)).toBe(s);
+  expect(sidebarCursor(a, s)).toBe(s);
 });

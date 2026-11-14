@@ -103,7 +103,11 @@ lists scroll inside.
     "Needs you" card that peeks at it (`terminal.peek`); working ones count in "Working N".
   - "Working N" (drawn by `ports`, so it stays the last row) is always there (N may be 0) and opens the Agents panel: on what's working (active only, shared
     `graph.want`) while N > 0, else on everything. The graph draws working agents in `t.working` (border and tint)
-    as it draws blocked ones in `t.blocked`.
+    as it draws blocked ones in `t.blocked`; a working agent's dot (and border, unless ringed) breathes, and Working's
+    spinner turns (8 pre-turned frames), the only motion, and only while something works.
+  - The graph rings where you are (`agent-graph/lib.js` `ringed`): while Inbox or Spaces has the keyboard, its cursor
+    (shared `inbox.cursor` / `spaces.cursor`, null otherwise): an Inbox card rings its agent, a space the worktree its
+    agents work in, an unopened worktree row its card. Otherwise the focused terminal's agent.
   - The inbox order drives ⌘] / ⌘[ (`setAgentOrder`).
 - **Ports.**
   - Every 5 s: `lsof -nP -iTCP -sTCP:LISTEN -Fpcn`, `ps -axo pid=,ppid=,etime=,comm=`, the listeners' folders

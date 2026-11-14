@@ -5,7 +5,7 @@
 import { View, div, svg, image, PathBuilder } from "gpui-kit";
 import { v_flex, h_flex, Scrollbar } from "gpui-base";
 import { agents, terminals, panes, spaces, focused, exec, run, theme, settings, props, closeOverlay, openOverlay, setShared, shared, home, layout } from "herdr";
-import { buildTree, layout as graphLayout, parseRevParse, prsByBranch, mrsAsPRs, cleanTitle, RANK, mix } from "./lib.js";
+import { buildTree, layout as graphLayout, parseRevParse, prsByBranch, mrsAsPRs, cleanTitle, RANK, mix, ringed, sidebarCursor } from "./lib.js";
 
 const GIT_TTL = 30000, PR_TTL = 60000;
 const MONO = "Geist Mono";
@@ -96,7 +96,7 @@ export default class AgentGraph extends View {
   items() {
     const ag = new Map(agents().map((a) => [a.address, a]));
     const pane = new Map(panes().filter((p) => p.terminal).map((p) => [p.terminal, p]));
-    const tabs = new Map(spaces().flatMap((s) => s.tabs.map((t) => [t.id, `${s.name} / ${t.name}`])));
+    const tabs = new Map(spaces().flatMap((s) => s.tabs.map((t) => [t.id, { label: `${s.name} / ${t.name}`, space: s.id }])));
     return terminals().filter((x) => x.state === "live").map((x) => {
       const a = ag.get(x.address), machine = x.address.includes("/") ? x.address.split("/")[0] : null;
       const lbl = x.labels?.["herdr.tab"];
@@ -110,7 +110,7 @@ export default class AgentGraph extends View {
         status: s in RANK ? s : "idle",
         name: cleanTitle(a?.title || x.title || x.name) || (agent ? program?.name : cwd?.split("/").filter(Boolean).pop()) || x.address,
         kind: agent ? null : x.foreground?.name ?? program?.name ?? "terminal",
-        tab: tabs.get(a?.tab ?? (lbl && machine ? `${machine}/${lbl}` : lbl)) ?? null,
+        ...((tab) => ({ tab: tab?.label ?? null, space: tab?.space ?? null }))(tabs.get(a?.tab ?? (lbl && machine ? `${machine}/${lbl}` : lbl))),
       };
     });
   }
@@ -239,6 +239,7 @@ export default class AgentGraph extends View {
     const picks = list ? tree.flatMap((r) => r.worktrees.flatMap((w) => w.agents.flatMap(walk)))
       : M.nodes.filter((n) => n.kind === "agent").sort((a, b) => a.y - b.y || a.x - b.x);
     const foc = focused()?.terminal ?? null;
+    const ring = ringed(tree, sidebarCursor(shared("inbox.cursor"), shared("spaces.cursor")), foc); // where you are: see lib
     if (!picks.some((n) => n.data.id === this.sel)) this.sel = (picks.find((n) => n.data.id === foc) ?? picks[0])?.data.id ?? null;
 
     // A popup is as tall as its content (mod.json height is the cap): size to the window. A panel fills its block.
@@ -262,7 +263,7 @@ export default class AgentGraph extends View {
         cx.notify();
       })
       .child(this.header(t, items))
-      .child(list ? this.list(t, tree, foc) : this.canvas(t, items, tree, M, foc));
+      .child(list ? this.list(t, tree, ring) : this.canvas(t, items, tree, M, ring));
   }
 
   // The body reports its size (logical px times zoom); fitting and the header's width breakpoints read it.
@@ -314,13 +315,13 @@ export default class AgentGraph extends View {
   }
 
   // Panel too narrow for a readable graph: the same tree as an indented list.
-  list(t, tree, foc) {
+  list(t, tree, ring) {
     const rows = [];
     const row = (id, depth) => h_flex().id(id).h(28).flex_none().pl(8 + depth * 16).pr(8).gap(8).items_center().rounded(7);
     const agent = (a, depth) => {
       const loud = a.status === "blocked", tone = loud ? t.blocked : a.status === "working" ? t.working : null, sel = this.sel === a.id, p = a.program;
       const ic = p?.icon ? (p.tint ? svg(p.icon).size(14).flex_none().text_color(t.foreground) : image(p.icon).w(14).h(14).flex_none()) : null;
-      rows.push(row(`l:${a.id}`, depth).border_1().border_color(foc === a.id ? t.accent : alpha(t.border, 0)).cursor_pointer()
+      rows.push(row(`l:${a.id}`, depth).border_1().border_color(ring.has(`a:${a.id}`) ? t.accent : alpha(t.border, 0)).cursor_pointer()
         .when(!!tone, (el) => el.bg(alpha(tone, 0.08))).when(sel && !tone, (el) => el.bg(t.selected))
         .hover((s) => s.bg(tone ? alpha(tone, 0.14) : t.hover))
         .when(!!a.tab, (el) => el.tooltip(a.tab))
@@ -342,7 +343,7 @@ export default class AgentGraph extends View {
       for (const w of r.worktrees) {
         const git = w.kind === "worktree";
         const ab = git && (w.ahead || w.behind) ? [w.ahead && `↑${w.ahead}`, w.behind && `↓${w.behind}`].filter(Boolean).join(" ") : "";
-        rows.push(row(`l:${w.id}`, 1)
+        rows.push(row(`l:${w.id}`, 1).border_1().border_color(ring.has(`w:${w.id}`) ? t.accent : alpha(t.border, 0))
           .child(svg(ICON(git ? "branch" : "folder")).size(14).flex_none().text_color(t.muted))
           .child(div().flex_1().min_w(0).truncate().text_size(12).font_family(MONO).text_color(t.foreground).child(git ? w.branch ?? "detached" : w.name))
           .when(!!ab, (el) => el.child(div().flex_none().text_size(11).font_family(MONO).text_color(t.dim).child(ab)))
@@ -360,7 +361,7 @@ export default class AgentGraph extends View {
       .when(s === "working", (el) => el.opacity(BREATH.steps[this.breath])); // breathes; everything else is still
   }
 
-  canvas(t, items, tree, L, foc) {
+  canvas(t, items, tree, L, ring) {
     const Z = this.Z;
     let el = this.measure(div().id("ag-canvas").flex_1().min_h(0).relative().overflow_hidden().bg(t.background))
       .map((el) => (this.drag?.moved ? el.cursor_grabbing() : el.cursor_grab()))
@@ -436,7 +437,7 @@ export default class AgentGraph extends View {
     }
     for (const st of [...STATUS].reverse()) if (paths.has(st)) els.push(layer(paths.get(st).build(), ink[st]));
 
-    for (const n of L.nodes) els.push(this.node(t, n, X(n.x), Y(n.y), z, foc));
+    for (const n of L.nodes) els.push(this.node(t, n, X(n.x), Y(n.y), z, ring.has(n.id)));
     // Zoom controls (⌘/ctrl-scroll and - / = zoom too): − · the zoom (click: fit) · +.
     const zb = (id, tip, label, onClick) => h_flex().id(id).h(24).px(8).items_center().justify_center().text_size(12).text_color(t.muted)
       .cursor_pointer().tooltip(tip).hover((s) => s.bg(t.hover).text_color(t.foreground))
@@ -461,7 +462,13 @@ export default class AgentGraph extends View {
       });
   }
 
-  node(t, n, x, y, z, foc) {
+  // Where you are (lib's ringed): an accent border and a soft halo.
+  ring(t, el, n, z, on) {
+    return !on ? el : el.border_color(t.accent).child(div().absolute().left(-4 * z).top(-4 * z).w(n.w * z + 8 * z).h(n.h * z + 8 * z)
+      .rounded(13 * z).border(2).border_color(alpha(t.accent, 0.3)));
+  }
+
+  node(t, n, x, y, z, isFoc) {
     const d = n.data;
     if (n.kind === "repo") {
       const none = d.kind === "none";
@@ -479,7 +486,7 @@ export default class AgentGraph extends View {
       const git = d.kind === "worktree";
       const ab = git && (d.ahead || d.behind) ? `${d.ahead ? `↑${d.ahead}` : ""}${d.ahead && d.behind ? " " : ""}${d.behind ? `↓${d.behind}` : ""}` : "";
       const path = git ? d.path : (d.path ?? "").replace(home(), "~");
-      return this.card(t, n, x, y, z)
+      return this.ring(t, this.card(t, n, x, y, z), n, z, isFoc)
         .child(h_flex().gap(8 * z).items_center()
           .child(svg(ICON(git ? "branch" : "folder")).size(14 * z).flex_none().text_color(t.muted))
           .child(div().flex_1().min_w(0).truncate().text_size(13 * z).font_family(MONO).text_color(t.foreground).child(git ? d.branch ?? "detached" : d.name))
@@ -489,7 +496,7 @@ export default class AgentGraph extends View {
           .when(!!d.pr, (el) => el.child(this.chip(t, d, z))));
     }
     const loud = d.status === "blocked", tone = loud ? t.blocked : d.status === "working" ? t.working : null; // working stands out too
-    const sel = this.sel === d.id, isFoc = foc === d.id;
+    const sel = this.sel === d.id;
     const p = d.program;
     const icon = p?.icon ? (p.tint ? svg(p.icon).size(16 * z).flex_none().text_color(t.foreground) : image(p.icon).w(16 * z).h(16 * z).flex_none()) : null;
     return this.card(t, n, x, y, z, tone)
@@ -499,8 +506,7 @@ export default class AgentGraph extends View {
       .cursor_pointer()
       .hover((s) => s.bg(tone ? mix(t.background, tone, 0.14) : sel ? t.selected : t.raised).border_color(isFoc ? t.accent : tone ?? t.input).shadow_sm())
       .on_click(() => { if (!this.drag?.moved) this.focusAgent(d); }) // a pan that started on the card isn't a click
-      .when(isFoc, (el) => el.child(div().absolute().left(-4 * z).top(-4 * z).w(n.w * z + 8 * z).h(n.h * z + 8 * z)
-        .rounded(13 * z).border(2).border_color(alpha(t.accent, 0.3))))
+      .when(isFoc, (el) => this.ring(t, el, n, z, true))
       .child(h_flex().gap(8 * z).items_center()
         .when(!!icon, (el) => el.child(icon))
         .child(div().flex_1().min_w(0).truncate().text_size(13 * z).font_semibold().text_color(t.foreground).child(d.name)))

@@ -79,3 +79,9 @@ export function reopened(archived, rows) {
   return rows.filter((r) => r.g?.linked).map((r) => [JSON.stringify([JSON.parse(r.g.repo)[0], r.g.top]), r.w.id])
     .filter(([k, id]) => k in archived && archived[k] !== id).map(([k]) => k);
 }
+
+// What a row is for the Agents graph's ring (agent-graph lib's ringed): a space, or a worktree no space has open.
+export function cursorOf(r) {
+  if (r?.kind === "wt") return { kind: "worktree", on: r.on, path: r.path };
+  return r?.w ? { kind: "space", id: r.w.id } : null;
+}
