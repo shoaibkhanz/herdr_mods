@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
 import { parseLsof, parseCwds, parsePs, parseEtime, slug, scratchSlug, ownerContext, owner,
-  urlFor, isWeb, servers, sortServers, holds, ago, blockHeight, subAgents, cardHeight, isLocal, rootOf, kindOf } from "./lib.js";
+  urlFor, isWeb, servers, sortServers, holds, ago, blockHeight, subAgents, cardHeight, isLocal, rootOf, kindOf, startedBy, byLine } from "./lib.js";
 import { LSOF, CWDS, PS, SCRATCH } from "./fixtures.js";
 
 test("parseLsof: one entry per pid+host+port; IPv4/IPv6 sockets of one pid kept apart by host", () => {
@@ -105,6 +105,60 @@ test("owner: docker by its process name; a parent cycle or missing parent ends t
   expect(owner(77, procs([77, 1, "/Applications/Docker.app/Contents/MacOS/com.docker.backend"]), "/", ctx)).toEqual({ kind: "docker", address: null });
   expect(owner(5, procs([5, 6], [6, 5]), "/", ctx)).toEqual({ kind: "orphan", address: null });
   expect(owner(5, procs([5, 999]), undefined, ctx)).toEqual({ kind: "orphan", address: null });
+});
+
+// ---- Who started a server Herdr doesn't own (never just "no agent") ----
+
+const MARGO = "/Users/shoaib/code/experiments/margo";
+// Recorded 2026-11-14: vite started by an agent in the Claude desktop app, in a margo worktree.
+const CLAUDE_APP = procs([86717, 86454, "node"], [86454, 86453, "node"], [86453, 17303, "/Applications/Claude.app/Contents/Helpers/disclaimer"],
+  [17303, 1, "/Applications/Claude.app/Contents/MacOS/Claude"]);
+
+test("startedBy: an agent in the Claude desktop app names the app and its worktree", () => {
+  const by = startedBy(86717, CLAUDE_APP, `${MARGO}/.claude/worktrees/merge-overnight/app`);
+  expect(by).toEqual({ agent: null, app: "Claude", left: false, place: "merge-overnight" });
+  expect(byLine(by)).toBe("Claude app");
+  expect(byLine(by, true)).toBe("Claude app · merge-overnight");
+});
+
+test("startedBy: Codex CLI in iTerm names both; a Codex desktop app reads as an app", () => {
+  const iterm = procs([500, 400, "node"], [400, 300, "-zsh"], [300, 250, "codex"], [250, 200, "-zsh"], [200, 150, "login"],
+    [150, 1, "/Applications/iTerm.app/Contents/MacOS/iTerm2"]);
+  expect(byLine(startedBy(500, iterm, "/w/app"))).toBe("Codex in iTerm");
+  expect(byLine(startedBy(500, procs([500, 90, "node"], [90, 1, "/Applications/Codex.app/Contents/MacOS/Codex"]), "/w/app"))).toBe("Codex app");
+  expect(byLine(startedBy(500, procs([500, 90, "node"], [90, 1, "/System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal"]), "/w/app")))
+    .toBe("Terminal app");
+});
+
+test("startedBy: a server whose Claude session is gone reads as left by it", () => {
+  const by = startedBy(8035, procs([8035, 1, "/opt/homebrew/Cellar/python@3.15/3.15.2/Frameworks/Python.framework/Versions/3.15/Resources/Python.app/Contents/MacOS/Python"]), SCRATCH);
+  expect(by).toEqual({ agent: "Claude", app: null, left: true, place: "ai-artifacts-research-6b95a0" }); // its own Python.app isn't an app
+  expect(byLine(by)).toBe("left by Claude");
+  expect(byLine(by, true)).toBe("left by Claude · ai-artifacts-research-6b95a0");
+  expect(byLine(startedBy(8035, procs([8035, 1, "python"]), "/Users/me/code/site"))).toBe("left running in site");
+});
+
+test("startedBy: Herdr is never the app; with nothing to name, the folder", () => {
+  const herdr = procs([500, 400, "node"], [400, 300, "/bin/zsh"], [300, 1, "/Users/me/Applications/Herdr.app/Contents/MacOS/Herdr"]);
+  expect(startedBy(500, herdr, "/Users/me/code/site").app).toBe(null);
+  expect(byLine(startedBy(500, procs([500, 400, "node"], [400, 300, "/bin/zsh"], [300, 1, "sshd"]), "/Users/me/code/site"))).toBe("in site");
+  expect(byLine(startedBy(500, procs([500, 400, "node"], [400, 1, "sshd"]), null))).toBe("outside Herdr");
+});
+
+test("owner: a server another app started isn't guessed onto a Herdr agent in the same repo", () => {
+  const ctx = ownerContext({ terminals: [term("t3p", 200, 300, MARGO)], roots: new Map([[MARGO, MARGO]]), home: "/Users/shoaib" });
+  expect(owner(86717, CLAUDE_APP, `${MARGO}/.claude/worktrees/merge-overnight/app`, ctx)).toEqual({ kind: "orphan", address: null });
+  expect(owner(8035, procs([8035, 1]), `${MARGO}/web`, ctx)).toEqual({ kind: "probable", address: "t3p" }); // left behind: still a guess
+});
+
+test("servers: an orphan row carries who started it; an owned one doesn't", () => {
+  const ctx = ownerContext({ terminals: [term("t1", 300, 310, "/Users/shoaib/w")], roots: new Map([["/Users/shoaib/w", "/Users/shoaib/w"]]), home: "/Users/shoaib" });
+  const ps = new Map([...CLAUDE_APP, [320, { pid: 320, ppid: 310, age: 60, comm: "node" }]]);
+  const listeners = [{ pid: 86717, command: "node", host: "[::1]", port: 1491 }, { pid: 320, command: "node", host: "[::1]", port: 3000 }];
+  const cwds = new Map([[86717, `${MARGO}/.claude/worktrees/merge-overnight/app`], [320, "/Users/shoaib/w"]]);
+  const rows = servers({ listeners, procs: ps, cwds, ctx, home: "/Users/shoaib" });
+  expect(rows.find((r) => r.port === 1491).by).toEqual({ agent: null, app: "Claude", left: false, place: "merge-overnight" });
+  expect(rows.find((r) => r.port === 3000).by).toBe(null);
 });
 
 // ---- Servers ----

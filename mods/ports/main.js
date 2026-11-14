@@ -8,7 +8,7 @@
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { exec, home, agents, terminals, panes, spaces, layout, run, theme, shared, setShared, nextCommand, focused, openOverlay } from "herdr";
-import { parseLsof, parseCwds, parsePs, ownerContext, servers, sortServers, ago, basename, blockHeight, subAgents, cardHeight, isLocal, rootOf, CARD, ROW_H, HEADER_H, EMPTY_H, FOOT_H } from "./lib.js";
+import { parseLsof, parseCwds, parsePs, ownerContext, servers, sortServers, ago, basename, byLine, blockHeight, subAgents, cardHeight, isLocal, rootOf, CARD, ROW_H, HEADER_H, EMPTY_H, FOOT_H } from "./lib.js";
 
 const POLL_MS = 5000;
 const FOCUS_CHECK_MS = 250;
@@ -98,7 +98,7 @@ export default class Ports extends View {
       await this.resolveRoots(terms);
       const ctx = ownerContext({ terminals: terms, roots: this.roots, home: home() });
       const rows = sortServers(servers({ listeners, procs: parsePs(ps.stdout), cwds: parseCwds(cw.stdout), ctx, home: home() }));
-      const sig = JSON.stringify([rows.map((r) => [r.key, r.owner, r.web, r.network, r.ports, r.owner.kind === "orphan" && ago(r.age)])]);
+      const sig = JSON.stringify([rows.map((r) => [r.key, r.owner, r.by, r.web, r.network, r.ports, r.owner.kind === "orphan" && ago(r.age)])]);
       this.rows = rows;
       this.publishKeys(rows);
       if (sig !== this.sig || this.error) { this.sig = sig; this.error = null; cx.notify(); }
@@ -140,7 +140,7 @@ export default class Ports extends View {
   who(s, model) {
     const o = s.owner;
     if (o.kind === "docker") return { ...NOBODY, label: "docker", kind: o.kind };
-    if (o.kind === "orphan") return { ...NOBODY, label: "no agent", kind: o.kind };
+    if (o.kind === "orphan") return { ...NOBODY, label: byLine(s.by), detail: byLine(s.by, true), kind: o.kind }; // who started it, never "no agent"
     const term = model.terms.get(o.address), pane = model.panes.get(o.address), agent = model.agents.get(o.address);
     const folder = pane?.cwd ?? term?.foreground?.cwd ?? term?.cwd;
     return {
@@ -223,12 +223,13 @@ export default class Ports extends View {
       .tooltip(s.url).on_click((_e, cx) => { cx.stop_propagation(); cx.open_url(s.url); })
       .child(svg(ICON("external-link")).size(11)).child("Open");
     const owned = s.owner.kind === "sure" || s.owner.kind === "probable";
-    const owner = h_flex().flex_1().min_w(0).gap(6).justify_end().items_center().font_family(MONO).text_size(11.5).text_color(t.dim)
+    const owner = h_flex().flex_1().min_w(0).gap(6).justify_end().items_center().text_size(11.5).text_color(t.dim)
       .when(s.network, (el) => el.child(div().id(`port-net-${s.key}`).flex_none().tooltip("Your network can reach it")
         .child(svg(ICON("globe")).size(12).text_color(t.dim))))
       .when(owned, (el) => el.child(this.mark(t, w, 12)))
       .child(orphan
-        ? h_flex().flex_none().gap(4).child("no agent ·").child(div().when(s.age > FORGOTTEN_S, (el) => el.text_color(t.working)).child(ago(s.age)))
+        ? h_flex().min_w(0).gap(4).child(div().min_w(0).truncate().child(w.label)).child("·")
+          .child(div().flex_none().when(s.age > FORGOTTEN_S, (el) => el.text_color(t.working)).child(ago(s.age)))
         : div().min_w(0).truncate().child(w.label));
     const [icon, what] = KIND[s.kind] ?? KIND.other;
     return h_flex().id(`port-${s.key}`).h(ROW_H).px(10).gap(8).flex_none().items_center().rounded(8).cursor_pointer()
