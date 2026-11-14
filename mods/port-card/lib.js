@@ -3,20 +3,6 @@
 
 const KB_PER_MB = 1024, KB_PER_GB = 1024 * 1024;
 
-// ps's cumulative CPU time: m:ss.cc, h:mm:ss[.cc] or d-hh:mm:ss -> seconds; null when it isn't one.
-export function parseCpuTime(s) {
-  const m = /^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+(?:\.\d+)?)$/.exec((s ?? "").trim());
-  if (!m) return null;
-  const [, d = 0, h = 0, min, sec] = m;
-  return ((Number(d) * 24 + Number(h)) * 60 + Number(min)) * 60 + Number(sec);
-}
-
-// CPU time grown between two samples ({ at: ms, cpu: s }) over the wall time between them; one core = 100.
-export function cpuPercent(prev, next) {
-  if (!prev || !next || next.at <= prev.at) return null;
-  return Math.round(((next.cpu - prev.cpu) / ((next.at - prev.at) / 1000)) * 100);
-}
-
 export const formatMem = (kb) => (kb >= KB_PER_GB ? `${(kb / KB_PER_GB).toFixed(1)} GB` : `${Math.round(kb / KB_PER_MB)} MB`);
 
 // From mods/ports/lib.js.
@@ -27,11 +13,11 @@ export function parseEtime(s) {
   return ((Number(d) * 24 + Number(h)) * 60 + Number(min)) * 60 + Number(sec);
 }
 
-// `ps -p <pid> -o time=,etime=,rss=` -> { cpu: s, age: s, rss: KB }, or null when the process is gone.
+// `ps -p <pid> -o etime=,rss=,%cpu=` -> { age: s, rss: KB, cpu: % (one core = 100) }, or null when the process is gone.
+// %cpu is ps's own recent average, so the card shows it from the first sample (no second sample to wait for).
 export function parseStat(text) {
-  const m = /^\s*(\S+)\s+(\S+)\s+(\d+)\s*$/.exec((text ?? "").trim());
-  const cpu = m && parseCpuTime(m[1]);
-  return m && cpu != null ? { cpu, age: parseEtime(m[2]), rss: Number(m[3]) } : null;
+  const m = /^\s*(\S+)\s+(\d+)\s+(\d+(?:\.\d+)?)\s*$/.exec((text ?? "").trim());
+  return m ? { age: parseEtime(m[1]), rss: Number(m[2]), cpu: Math.round(Number(m[3])) } : null;
 }
 
 // From mods/ports/lib.js.
@@ -71,7 +57,7 @@ export function shortArgs(args, command) {
 // Never Docker: its pid is Docker itself, and stopping it stops every container. Checked on every path to Stop.
 export const canStop = (who) => !!who && who.kind !== "docker";
 
-// `ps -p <pid> -o time=,etime=,rss=`: { cpu, age, rss } while it runs; "gone" on ps's no-such-process exit (1, nothing
+// `ps -p <pid> -o etime=,rss=,%cpu=`: { age, rss, cpu } while it runs; "gone" on ps's no-such-process exit (1, nothing
 // printed); "error" for anything else (a timeout, a failed exec), which the card retries instead of calling it stopped.
 export function statOutcome(r) {
   if (!r) return "error";
