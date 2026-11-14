@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { parseWorktrees, parseTrack, addWorktrees, nearest, actionTarget, reopened } from "./lib.js";
+import { parseWorktrees, parseTrack, addWorktrees, nearest, actionTarget, reopened, cursorOf } from "./lib.js";
 
 const PORCELAIN = ["worktree /r", "HEAD a", "branch refs/heads/main", "",
   "worktree /w/feat", "HEAD b", "branch refs/heads/feat/x", "",
@@ -112,4 +112,10 @@ test("reopened: archived keys whose worktree is open again in a new space", () =
   expect(reopened({ [k]: "F" }, fixture())).toEqual([]); // the space being closed by the archive itself
   expect(reopened({ [k]: "old" }, fixture())).toEqual([k]);
   expect(reopened({ [k]: null }, fixture())).toEqual([k]);
+});
+
+test("cursorOf: a space row is its space, an unopened worktree its machine and path, nothing else a cursor", () => {
+  expect(cursorOf({ kind: "space", key: "s:s1", w: { id: "s1" } })).toEqual({ kind: "space", id: "s1" });
+  expect(cursorOf({ kind: "wt", on: null, path: "/w/feat" })).toEqual({ kind: "worktree", on: null, path: "/w/feat" });
+  expect(cursorOf(undefined)).toBe(null);
 });

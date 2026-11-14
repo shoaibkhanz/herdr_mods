@@ -6,7 +6,7 @@
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { subAgents, splitColumn } from "./lib.js";
-import { agents, terminals, panes, spaces, machines, keys, run, theme, setAgentOrder, layout, settings, shared, nextCommand, focused } from "herdr";
+import { agents, terminals, panes, spaces, machines, keys, run, theme, setAgentOrder, layout, settings, shared, setShared, nextCommand, focused } from "herdr";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -79,6 +79,15 @@ export default class Inbox extends View {
       if (this.cur) this.list.scroll_to_item(j);
     } else if (k === "enter" && i >= 0) this.go(this.cards[i]);
     cx.notify();
+  }
+
+  // The Agents graph rings where this cursor is (agent-graph lib's ringed): shared only while this list has the
+  // keyboard, and only when it changes (setShared writes to disk and redraws every mod).
+  shareCursor(key, value) {
+    const k = JSON.stringify(value);
+    if (k === this.cursorShared) return;
+    this.cursorShared = k;
+    setShared(key, value && { ...value, at: Date.now() });
   }
 
   // To an agent: its tab (pane.focus releases our keyboard), or a sub-agent's terminal peeked over the tab (it has none).
@@ -183,6 +192,7 @@ export default class Inbox extends View {
     this.curI = Math.max(i, 0);
     this.comeBack(cx, this.ringed, () => this.fh.focus());
     this.ringed = this.fh.is_focused();
+    this.shareCursor("inbox.cursor", this.ringed && this.cur ? { kind: "agent", id: this.cur } : null);
     if (!cards.some((a) => a.address === this.hovered)) this.hovered = null; // gone without a hover-out
     setAgentOrder([...cards, ...all.filter((a) => !cards.includes(a))].map((a) => a.address)); // ⌘] / ⌘[ walk the inbox first
     const settled = [...tabs.values()].filter((tab) => tab.settled).sort((x, y) => (y.settled_at ?? 0) - (x.settled_at ?? 0));

@@ -8,7 +8,7 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { spaces, machines, panes, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout, nextCommand, focused, notify } from "herdr";
-import { parseWorktrees, parseTrack, addWorktrees, nearest, actionTarget, reopened } from "./lib.js";
+import { parseWorktrees, parseTrack, addWorktrees, nearest, actionTarget, reopened, cursorOf } from "./lib.js";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -613,6 +613,15 @@ export default class Spaces extends View {
     });
   }
 
+  // The Agents graph rings where this cursor is (agent-graph lib's ringed): shared only while this list has the
+  // keyboard, and only when it changes (setShared writes to disk and redraws every mod).
+  shareCursor(key, value) {
+    const k = JSON.stringify(value);
+    if (k === this.cursorShared) return;
+    this.cursorShared = k;
+    setShared(key, value && { ...value, at: Date.now() });
+  }
+
   // Keys while the list holds the keyboard; the folded sizes take only ctrl-j/l and Esc. pane.go releases only
   // a keyboard pane.go gave, not one this mod took (spaces-plus.focus, ⌘B): so ctrl-j goes to the inbox by name, and
   // ctrl-l / Esc focus the pane focused() still reports, the one you came from.
@@ -675,6 +684,7 @@ export default class Spaces extends View {
     if (changed) setShared("space.colors", kept);
     this.comeBack(cx, this.ringed, () => this.fh.focus());
     this.ringed = this.fh.is_focused();
+    this.shareCursor("spaces.cursor", this.ringed && !narrow() ? cursorOf((this.rows ?? []).find((r) => r.key === this.cur)) : null);
     return v_flex().size_full().min_h(0).bg(t.chrome).text_size(13)
       .track_focus(this.fh).on_key_down((e, cx) => this.key(e.keystroke, cx))
       .when(!dots, (el) => el.child(h_flex().h(31 + top).pt(top).pl(16).pr(10).flex_none().items_center().justify_between().text_size(11.5).text_color(t.dim)

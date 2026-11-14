@@ -121,3 +121,18 @@ export function layout(repos) {
 // Two theme colours (#rrggbb) blended, k of `b`: an opaque stand-in for `b` at alpha k over `a`.
 export const mix = (a, b, k) => "#" + [1, 3, 5].map((i) =>
   Math.round(parseInt(a.slice(i, i + 2), 16) * (1 - k) + parseInt(b.slice(i, i + 2), 16) * k).toString(16).padStart(2, "0")).join("");
+
+// The cards the graph rings (node ids): where the sidebar's cursor is (cursor: { kind: "agent", id } an Inbox card,
+// { kind: "space", id } a space -> the worktrees its agents work in, { kind: "worktree", on, path } an unopened one),
+// else the focused terminal's agent (foc).
+export function ringed(repos, cursor, foc) {
+  if (!cursor) return new Set(foc ? [`a:${foc}`] : []);
+  if (cursor.kind === "agent") return new Set([`a:${cursor.id}`]);
+  if (cursor.kind === "worktree") return new Set([`w:${cursor.on ?? ""}|${cursor.path}`]);
+  const inSpace = (a) => a.space === cursor.id || a.children.some(inSpace);
+  return new Set(repos.flatMap((r) => r.worktrees).filter((w) => w.agents.some(inSpace)).map((w) => `w:${w.id}`));
+}
+
+// Inbox and Spaces each share their cursor (null without the keyboard); while it moves between them both can be
+// set for a moment, and the newer one is where it went.
+export const sidebarCursor = (inbox, spaces) => (inbox && spaces ? (inbox.at > spaces.at ? inbox : spaces) : inbox ?? spaces ?? null);
