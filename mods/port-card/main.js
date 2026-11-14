@@ -7,7 +7,7 @@
 import { View, div, image, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { exec, run, props, closeOverlay, theme, home, setShared, notify } from "herdr";
-import { cpuPercent, formatMem, shortArgs, canStop, statOutcome, heldOutcome } from "./lib.js";
+import { formatMem, shortArgs, canStop, statOutcome, heldOutcome } from "./lib.js";
 
 const REFRESH_MS = 5000;
 const STOP_CHECK_MS = 1000, STOP_WAIT_MS = 10000; // after SIGTERM: check each second, give up after ten
@@ -39,8 +39,7 @@ export default class PortCard extends View {
     const s = props()?.server;
     this.asking = !!props()?.ask && canStop(props()?.who);
     this.sel = null; // the selected button's id; null: the default
-    this.stat = null; // { cpu, age, rss } from the last ps
-    this.cpu = null; // % since the sample before
+    this.stat = null; // { age, rss, cpu } from the last ps
     this.state = "live"; // live | stopping | stopped | still
     if (!s) return; // herdr-app check: no props
     this.refresh(cx);
@@ -51,12 +50,9 @@ export default class PortCard extends View {
   async refresh(cx) {
     if (this.state !== "live") return;
     const s = props().server;
-    const stat = statOutcome(await exec("ps", ["-p", String(s.pid), "-o", "time=,etime=,rss="], EXEC).catch(() => null));
+    const stat = statOutcome(await exec("ps", ["-p", String(s.pid), "-o", "etime=,rss=,%cpu="], EXEC).catch(() => null));
     if (stat === "error") return; // a timeout or failed exec: keep what's shown, try again next time
     if (stat === "gone") { this.state = "stopped"; cx.notify(); return; }
-    const sample = { at: Date.now(), cpu: stat.cpu };
-    this.cpu = cpuPercent(this.sample, sample) ?? this.cpu;
-    this.sample = sample;
     this.stat = stat;
     cx.notify();
   }
@@ -198,7 +194,7 @@ export default class PortCard extends View {
 
     const st = this.stat;
     const running = this.state === "stopping" ? "Stopping…" : this.state === "stopped" ? "Stopped" : this.state === "still" ? "Still running"
-      : st ? `${ago(st.age)} · ${this.cpu == null ? "–" : `${this.cpu}%`} CPU · ${formatMem(st.rss)}` : "…";
+      : st ? `${ago(st.age)} · ${st.cpu}% CPU · ${formatMem(st.rss)}` : "…";
     const others = s.ports.filter((x) => x !== s.port);
 
     const list = this.buttons(), sel = this.selected(list);

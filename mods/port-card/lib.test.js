@@ -1,20 +1,5 @@
 import { test, expect } from "bun:test";
-import { parseCpuTime, cpuPercent, formatMem, parseStat, parseLsof, holds, shortArgs, canStop, statOutcome, heldOutcome } from "./lib.js";
-
-test("parseCpuTime: ps time forms (m:ss.cc, h:mm:ss, d-hh:mm:ss) to seconds", () => {
-  expect(parseCpuTime("8:37.43")).toBeCloseTo(8 * 60 + 37.43, 5);
-  expect(parseCpuTime("77:54.28")).toBeCloseTo(77 * 60 + 54.28, 5);
-  expect(parseCpuTime("1:02:03")).toBe(3723);
-  expect(parseCpuTime("2-01:00:00")).toBe(2 * 86400 + 3600);
-  expect(parseCpuTime("nope")).toBe(null);
-});
-
-test("cpuPercent: CPU time grown over wall time, one core = 100%; null until two samples", () => {
-  expect(cpuPercent(null, { at: 5000, cpu: 3 })).toBe(null);
-  expect(cpuPercent({ at: 0, cpu: 1 }, { at: 5000, cpu: 1.5 })).toBe(10);
-  expect(cpuPercent({ at: 0, cpu: 1 }, { at: 5000, cpu: 11 })).toBe(200); // two cores busy
-  expect(cpuPercent({ at: 0, cpu: 2 }, { at: 0, cpu: 2 })).toBe(null); // no time passed
-});
+import { formatMem, parseStat, parseLsof, holds, shortArgs, canStop, statOutcome, heldOutcome } from "./lib.js";
 
 test("formatMem: KB from ps rss to MB or GB", () => {
   expect(formatMem(18848)).toBe("18 MB");
@@ -22,8 +7,9 @@ test("formatMem: KB from ps rss to MB or GB", () => {
   expect(formatMem(3 * 1024 * 1024 + 300 * 1024)).toBe("3.3 GB");
 });
 
-test("parseStat: `ps -o time=,etime=,rss=` line; null when the process is gone", () => {
-  expect(parseStat("  8:37.43    12:52:51 213792\n")).toEqual({ cpu: 8 * 60 + 37.43, age: 12 * 3600 + 52 * 60 + 51, rss: 213792 });
+test("parseStat: `ps -o etime=,rss=,%cpu=` line, CPU shown from the first sample; null when the process is gone", () => {
+  expect(parseStat("    12:52:51 213792  15.0\n")).toEqual({ age: 12 * 3600 + 52 * 60 + 51, rss: 213792, cpu: 15 });
+  expect(parseStat(" 2-19:19:53   3376 103.6")).toEqual({ age: 2 * 86400 + 19 * 3600 + 19 * 60 + 53, rss: 3376, cpu: 104 }); // two cores
   expect(parseStat("")).toBe(null);
 });
 
@@ -53,7 +39,7 @@ test("statOutcome: a failed or timed-out ps is an error to retry, not a stopped 
   expect(statOutcome(null)).toBe("error");
   expect(statOutcome({ code: -1, stdout: "", stderr: "timed out" })).toBe("error");
   expect(statOutcome({ code: 1, stdout: "", stderr: "" })).toBe("gone");
-  expect(statOutcome({ code: 0, stdout: "  8:37.43    12:52:51 213792\n" })).toEqual({ cpu: 8 * 60 + 37.43, age: 46371, rss: 213792 });
+  expect(statOutcome({ code: 0, stdout: "    12:52:51 213792   0.0\n" })).toEqual({ age: 46371, rss: 213792, cpu: 0 });
 });
 
 test("heldOutcome: lsof's no-match exit is 'not held'; a failure is unknown (null), never 'not held'", () => {
