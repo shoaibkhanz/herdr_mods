@@ -46,7 +46,7 @@ Left to right, no title bar, the theme's `canvas` behind cards, 1px `border` div
       globe when your network can reach it, then who: the owner's program mark (12px; half strength when only
       probable) and its branch (else folder) in Geist 11.5px `dim`. A server no Herdr terminal owns says who started
       it, never "no agent" (`lib.js` `startedBy` / `byLine`, from its parent chain): an agent CLI on it and the app at
-      its top ("Codex in iTerm", "Claude app"; Herdr is never the app), or "left by Claude" when its parent is gone and
+      its top ("Codex in iTerm", "Claude app"; Herdr is never the app), or "Claude ended" (the card: "Started by a Claude session that has ended") when its parent is gone and
       it runs in a Claude scratchpad, else its folder; then "· age", the age in `working` past an hour. An app or agent
       CLI on the chain also stops the folder guess (an outside app's server is never "probably" a Herdr agent's). Hover swaps the owner for an Open chip (web servers only).
     - The card (`port-card`, a 340px popup): `:port` and process, the address in a mono box with copy, then Agent

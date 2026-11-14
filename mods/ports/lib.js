@@ -160,11 +160,13 @@ export function startedBy(pid, procs, cwd) {
     place: /\/worktrees\/([^/]+)/.exec(cwd ?? "")?.[1] ?? (scratch ? /-worktrees-(.+)$/.exec(scratch)?.[1] ?? null : basename(cwd) || null) };
 }
 
-// startedBy as a row reads it ("Claude app", "Codex in iTerm", "left by Claude Code"); full adds the place (the card).
+// startedBy as a row reads it ("Claude app", "Codex in iTerm", "Claude ended": its session ended, the server didn't);
+// full (the card, which has room) spells an ended starter out and adds the place.
 export function byLine(by, full = false) {
+  const ended = by.left && (by.agent ? (full ? `Started by a ${by.agent} session that has ended` : `${by.agent} ended`)
+    : full ? "What started it has ended" : null);
   const line = by.app ? (by.agent ? `${by.agent} in ${by.app}` : `${by.app} app`)
-    : by.left ? (by.agent ? `left by ${by.agent}` : by.place ? `left running in ${by.place}` : "left running")
-    : by.agent ?? (by.place ? `in ${by.place}` : "outside Herdr");
+    : ended || by.agent || (by.place ? `in ${by.place}` : "outside Herdr");
   return full && by.place && !line.includes(by.place) ? `${line} · ${by.place}` : line;
 }
 
