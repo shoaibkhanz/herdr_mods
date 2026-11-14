@@ -59,6 +59,9 @@ async function pulls(on, cwd) {
 }
 
 const GRAIN = 256, GRAIN_OPACITY = 0.1; // grain.png's tile (logical px at zoom 1) and how strong: felt more than seen
+// A working agent breathes (its dot and its card's border) so it reads as running at a glance. A step redraws the
+// whole graph, so it's slow (2.5 a second) and only while the graph shows and something is working.
+const BREATH = { steps: [1, 0.7, 0.4, 0.7], ms: 400 };
 
 export default class AgentGraph extends View {
   init(_props, cx) {
@@ -80,6 +83,8 @@ export default class AgentGraph extends View {
     }
     // The first render refreshes (and again whenever a hidden panel comes back).
     cx.timer.every(GIT_TTL, (cx) => { if (this.shown()) this.refresh(cx); });
+    this.breath = 0;
+    cx.timer.every(BREATH.ms, (cx) => { if (this.anyWorking && this.shown()) { this.breath = (this.breath + 1) % BREATH.steps.length; cx.notify(); } });
   }
 
   // A panel copy stays alive while hidden; it skips git / gh work until shown.
@@ -225,6 +230,7 @@ export default class AgentGraph extends View {
     if (this.panel) { this.comeBack(cx, this.held); this.held = this.h.is_focused(); }
     this.wasShown = shown;
     const items = this.items();
+    this.anyWorking = items.some((i) => i.status === "working"); // the breath timer reads it
     if (shown && !this.busy && items.some((i) => i.cwd && !this.git.has(key(i.machine, i.cwd)))) this.refresh(cx);
     const tree = buildTree(items, (m, c) => this.git.get(key(m, c))?.v ?? null, (m, c) => this.prs.get(key(m, c))?.v ?? undefined, { activeOnly: this.activeOnly });
     const L = graphLayout(tree), M = this.moved(L); // M: with the person's dragged offsets
@@ -350,7 +356,8 @@ export default class AgentGraph extends View {
   }
 
   dot(t, s, size = 8) {
-    return div().size(size).flex_none().rounded(size).bg(t[s] ?? t.idle); // still: an always-on animation redraws every frame
+    return div().size(size).flex_none().rounded(size).bg(t[s] ?? t.idle)
+      .when(s === "working", (el) => el.opacity(BREATH.steps[this.breath])); // breathes; everything else is still
   }
 
   canvas(t, items, tree, L, foc) {
@@ -487,6 +494,7 @@ export default class AgentGraph extends View {
     const icon = p?.icon ? (p.tint ? svg(p.icon).size(16 * z).flex_none().text_color(t.foreground) : image(p.icon).w(16 * z).h(16 * z).flex_none()) : null;
     return this.card(t, n, x, y, z, tone)
       .when(sel && !tone, (el) => el.bg(t.selected))
+      .when(d.status === "working" && !isFoc, (el) => el.border_color(alpha(t.working, 0.25 + 0.6 * BREATH.steps[this.breath])))
       .when(isFoc, (el) => el.border_color(t.accent))
       .cursor_pointer()
       .hover((s) => s.bg(tone ? mix(t.background, tone, 0.14) : sel ? t.selected : t.raised).border_color(isFoc ? t.accent : tone ?? t.input).shadow_sm())
