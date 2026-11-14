@@ -3,3 +3,4 @@ jsconfig.json
 *.error
 __pycache__/
 .superpowers/
+docs/superpowers/
