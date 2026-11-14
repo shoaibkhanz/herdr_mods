@@ -6,30 +6,26 @@
 
 import { View, div, image, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { exec, run, props, closeOverlay, theme, home, setShared, notify } from "herdr";
-import { formatMem, shortArgs, canStop, statOutcome, heldOutcome } from "./lib.js";
+import { exec, run, props, closeOverlay, theme, setShared, notify } from "herdr";
+import { agePrecise, portList, formatMem, shortArgs, canStop, statOutcome, heldOutcome } from "./lib.js";
 
 const REFRESH_MS = 5000;
 const STOP_CHECK_MS = 1000, STOP_WAIT_MS = 10000; // after SIGTERM: check each second, give up after ten
 const CLOSE_AFTER_STOP_MS = 1200;
 const COPIED_MS = 1500;
-// Emergence's dialog standard (RECIPE "Dialogs"): 24px padding, 16px gaps, a 15px title row with a clickable Esc chip,
-// 34px buttons; widths 440 / 560 / 680.
+// Emergence's dialog standard (RECIPE "Dialogs"): 24px padding, 16px gaps, a 22px title row with the Esc chip, 32px
+// buttons of which only the one Enter presses is filled; widths 440 / 560 / 680. Type is Herdr's (no font set).
 const LABEL_W = 72;
 // The same measures as mods/ports/lib.js CARD, which sizes this dialog from them (keep the two in step).
-const M = { pad: 24, gap: 16, header: 22, url: 34, line: 20, task: 20, fieldGap: 10, buttons: 34 };
+const M = { pad: 24, gap: 16, header: 22, owner: 40, box: 52, line: 20, fieldGap: 10, buttons: 32 };
 const EXEC = { timeout: 4000 };
-const MONO = "Geist Mono";
 const ICON = (name) => `mods/port-card/${name}.svg`;
 const KIND = { web: "app-window", db: "database", debug: "bug", docker: "container", other: "plug" }; // as the Ports row
 const STATUS = { working: "working", blocked: "needs you", done: "finished", idle: "idle" };
+const STATE_INK = { working: "working", blocked: "blocked", done: "done", idle: "muted" }; // theme colour names
+const FORGOTTEN_S = 3600; // an orphan's age turns amber past an hour, as its Ports row
 
 const alpha = (c, a) => c.slice(0, 7) + Math.round(a * 255).toString(16).padStart(2, "0");
-const ago = (sec) => { const m = Math.floor(sec / 60); return m < 1 ? "<1m" : m < 60 ? `${m}m` : m < 1440 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${Math.floor(m / 1440)}d`; };
-// Geist Mono swallows the space before "--" and gpui can't turn ligatures off: a zero-width non-joiner between the
-// hyphens keeps the text as typed (display only; the tooltip and copy keep the real text).
-const noLigatures = (text) => text.replace(/-(?=-)/g, "-\u200C");
-const tilde = (p) => (p && home() && p.startsWith(home()) ? `~${p.slice(home().length)}` : p ?? "");
 
 export default class PortCard extends View {
   init(_props, cx) {
@@ -126,15 +122,15 @@ export default class PortCard extends View {
 
   // The buttons for the moment: the question while asking, else Go to · Stop · Open (each where it applies).
   buttons() {
-    const s = props().server, w = props().who, t = theme(), live = this.state === "live";
+    const s = props().server, w = props().who, live = this.state === "live";
     if (this.asking && canStop(w)) return [
       { id: "cancel", label: "Cancel", act: (cx) => { this.asking = false; this.sel = null; cx.notify(); } },
-      { id: "stop", label: "Stop", ink: t.blocked, act: (cx) => this.stop(cx) },
+      { id: "stop", label: "Stop", danger: true, act: (cx) => this.stop(cx) },
     ];
     const go = w.kind === "sure" || w.kind === "probable"
-      ? [{ id: "go", label: w.agent ? (w.probable ? "Go to agent?" : "Go to agent") : "Go to terminal", act: () => this.goTo() }] : [];
-    const stop = canStop(w) && live ? [{ id: "ask", label: "Stop", ink: t.blocked, act: (cx) => { this.asking = true; this.sel = null; cx.notify(); } }] : [];
-    const open = s.web && live ? [{ id: "open", label: "Open", hint: "↵", ink: t.accent, act: (cx) => this.open(cx) }] : [];
+      ? [{ id: "go", label: w.agent ? "Go to agent" : "Go to terminal", act: () => this.goTo() }] : [];
+    const stop = canStop(w) && live ? [{ id: "ask", label: "Stop", danger: true, act: (cx) => { this.asking = true; this.sel = null; cx.notify(); } }] : [];
+    const open = s.web && live ? [{ id: "open", label: "Open", act: (cx) => this.open(cx) }] : [];
     return [...go, ...stop, ...open];
   }
 
@@ -175,68 +171,83 @@ export default class PortCard extends View {
   render() {
     const t = theme(), p = props();
     if (!p?.server) return div().id("port-card").size_full().bg(t.popover); // herdr-app check
-    const s = p.server, w = p.who;
-    const field = (label, value) => h_flex().min_h(M.line).gap(12).items_start()
-      .child(div().w(LABEL_W).h(M.line).flex_none().flex().items_center().text_size(11.5).text_color(t.dim).child(label))
+    const s = p.server, w = p.who, owned = w.kind === "sure" || w.kind === "probable";
+    const field = (label, value) => h_flex().h(M.line).gap(12).items_center()
+      .child(div().w(LABEL_W).flex_none().text_size(11.5).text_color(t.dim).child(label))
       .child(div().flex_1().min_w(0).child(value));
-    const mono = (text, tip) => div().id(`v-${text}`).truncate().font_family(MONO).text_size(12).text_color(t.foreground)
-      .when(Boolean(tip), (el) => el.tooltip(tip)).child(text);
     const address = s.web ? s.url : s.url.replace(/^http:\/\//, "");
-
-    const agentLine = w.kind === "docker" ? div().text_color(t.foreground).child("Docker")
-      : w.kind === "orphan" ? div().truncate().text_color(t.foreground).child(w.detail ?? w.label) // who started it (Ports' byLine)
-      : v_flex()
-        .child(h_flex().h(M.line).gap(6).items_center().text_color(t.foreground)
-          .child(this.mark(t, w, 14))
-          .child(div().truncate().child([w.program?.name ?? "Terminal", w.probable ? "probably" : w.agent ? STATUS[w.status] ?? w.status : null].filter(Boolean).join(" · "))))
-        .when(Boolean(w.task), (el) => el.child(div().h(M.task).flex().items_center().text_size(12).text_color(t.muted)
-          .child(div().truncate().child(w.task))));
-
-    const st = this.stat;
-    const running = this.state === "stopping" ? "Stopping…" : this.state === "stopped" ? "Stopped" : this.state === "still" ? "Still running"
-      : st ? `${ago(st.age)} · ${st.cpu}% CPU · ${formatMem(st.rss)}` : "…";
     const others = s.ports.filter((x) => x !== s.port);
 
+    // Who: line 1 the program (500) and where it lives, its state on the right; line 2 what it's doing, or why it's
+    // only probably this agent's, or where an orphan runs. Both decided by Ports (lib ownerLines), never cut to a
+    // second line: "…" and a tooltip.
+    const name = w.program?.name, rest = owned && name && w.line1.startsWith(name) ? w.line1.slice(name.length) : null;
+    const owner = v_flex().h(M.owner).flex_none()
+      .child(h_flex().id("pc-who").h(22).gap(8).items_center().tooltip(w.line1)
+        .child(this.mark(t, w, 16))
+        .child(h_flex().flex_1().min_w(0).text_color(t.foreground)
+          .map((el) => rest === null ? el.child(div().truncate().child(w.line1))
+            : el.child(div().flex_none().font_medium().child(name)).child(div().min_w(0).truncate().child(rest))))
+        .when(owned && !!STATUS[w.status], (el) => el.child(div().flex_none().text_size(12).text_color(t[STATE_INK[w.status]]).child(STATUS[w.status]))))
+      .child(div().id("pc-why").h(18).pl(24).flex().items_center().text_size(12).text_color(t.muted)
+        .when(Boolean(w.line2), (el) => el.tooltip(w.line2)).child(div().min_w(0).truncate().child(w.line2 ?? "")));
+
+    // What: the address you'd open or copy, who can reach it, and the command behind it.
+    const box = v_flex().id("pc-box").h(M.box).flex_none().px(12).py(8).rounded(6).bg(t.surface).border_1().border_color(t.border)
+      .child(h_flex().h(20).gap(8).items_center()
+        .child(div().flex_1().min_w(0).truncate().text_color(t.foreground).child(address))
+        .child(s.network
+          ? h_flex().flex_none().gap(4).items_center().text_size(11).text_color(t.working).child(svg(ICON("globe")).size(12)).child("Your network")
+          : div().flex_none().text_size(11).text_color(t.dim).child("This Mac only"))
+        .child(h_flex().id("pc-copy").flex_none().gap(4).items_center().cursor_pointer().text_size(11).text_color(t.muted)
+          .hover((x) => x.text_color(t.foreground)).tooltip("Copy")
+          .on_click((_e, cx) => this.copy(cx, address))
+          .child(this.copied ? div().child("Copied") : svg(ICON("copy")).size(13))))
+      .child(div().id("pc-cmd").h(16).flex().items_center().text_size(12).text_color(t.dim)
+        .when(Boolean(this.args), (el) => el.tooltip(this.args))
+        .child(div().min_w(0).truncate().child(shortArgs(this.args, s.command) || s.command)));
+
+    const st = this.stat, live = this.state === "live";
+    const forgotten = w.kind === "orphan" && (st?.age ?? s.age) > FORGOTTEN_S;
+    const running = !live ? div().text_color(this.state === "still" ? t.working : t.muted)
+        .child(this.state === "stopping" ? "Stopping…" : this.state === "stopped" ? "Stopped" : "Still running")
+      : !st ? div().text_color(t.muted).child("…")
+      : h_flex().gap(4).text_color(t.foreground)
+        .child(div().when(forgotten, (el) => el.text_color(t.working)).child(agePrecise(st.age)))
+        .child(`· ${st.cpu}% CPU · ${formatMem(st.rss)}`);
+
+    // Buttons (RECIPE "Dialogs"): only the one Enter presses is filled (solid; a destructive one in blocked), with ↵.
     const list = this.buttons(), sel = this.selected(list);
-    const button = (b) => h_flex().id(`pc-${b.id}`).h(M.buttons).px(14).gap(6).items_center().rounded(8).cursor_pointer()
-      .border_1().border_color(sel === b.id ? t.accent : b.ink ? alpha(b.ink, 0.4) : t.input)
-      .bg(b.ink ? alpha(b.ink, sel === b.id ? 0.2 : 0.1) : sel === b.id ? t.selected : t.raised)
-      .text_color(b.ink ?? t.foreground).font_medium().hover((x) => x.opacity(0.88))
-      .on_click((_e, cx) => b.act(cx))
-      .child(b.label).when(Boolean(b.hint), (el) => el.child(div().text_size(11).opacity(0.7).child(b.hint)));
+    const button = (b) => {
+      const on = sel === b.id;
+      return h_flex().id(`pc-${b.id}`).h(M.buttons).px(14).gap(6).items_center().rounded(8).cursor_pointer().border_1().text_size(12).font_medium()
+        .map((el) => on && b.danger ? el.bg(alpha(t.blocked, 0.18)).border_color(alpha(t.blocked, 0.5)).text_color(t.blocked)
+          : on ? el.bg(t.solid).border_color(t.solid).text_color(t.solid_foreground)
+          : el.bg(t.raised).border_color(t.input).text_color(b.danger ? t.blocked : t.foreground))
+        .hover((x) => x.opacity(0.88)).on_click((_e, cx) => b.act(cx))
+        .child(b.label).when(on, (el) => el.child(div().text_size(11).opacity(0.7).child("↵")));
+    };
 
     return v_flex().id("port-card").track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
       .size_full().min_h(0).p(M.pad).gap(M.gap).rounded(10).bg(t.popover).text_size(13)
       .child(h_flex().h(M.header).flex_none().items_center().gap(10)
         .child(svg(ICON(KIND[s.kind] ?? "plug")).size(16).flex_none().text_color(t.muted))
-        .child(div().flex_none().font_family(MONO).text_size(15).font_semibold().text_color(t.foreground).child(`:${s.port}`))
+        .child(div().flex_none().text_size(15).font_semibold().text_color(t.foreground).child(`:${s.port}`))
         .child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(s.command))
         .child(div().id("pc-esc").flex_none().px(6).py(2).rounded(5).text_size(11).text_color(t.dim).cursor_pointer()
           .hover((x) => x.bg(t.hover).text_color(t.foreground)).on_click(() => this.dismiss()).child("Esc")))
-      .child(h_flex().id("pc-url").flex_none().px(12).h(M.url).gap(8).items_center().rounded(6).bg(t.surface).border_1().border_color(t.border)
-        .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(12.5).text_color(t.foreground).child(address))
-        .child(h_flex().id("pc-copy").flex_none().gap(4).items_center().cursor_pointer().text_size(11).text_color(t.muted)
-          .hover((x) => x.text_color(t.foreground)).tooltip("Copy")
-          .on_click((_e, cx) => this.copy(cx, address))
-          .child(this.copied ? div().child("Copied") : svg(ICON("copy")).size(13))))
+      .child(owner)
+      .child(box)
       .child(v_flex().flex_1().min_h(0).gap(M.fieldGap)
-        .child(field("Agent", agentLine))
-        .when(!!w.branch, (el) => el.child(field("Branch", mono(w.branch))))
-        .child(field("Command", div().id("pc-cmd").whitespace_nowrap().overflow_hidden().text_ellipsis().font_family(MONO).text_size(12).text_color(t.foreground)
-          .when(Boolean(this.args), (el) => el.tooltip(this.args)).child(noLigatures(shortArgs(this.args, s.command) || s.command))))
-        .when(!!s.cwd && s.cwd !== w.folder, (el) => el.child(field("Folder", div().id("pc-folder").whitespace_nowrap().overflow_hidden().text_ellipsis_middle()
-          .font_family(MONO).text_size(12).text_color(t.foreground).tooltip(s.cwd).child(tilde(s.cwd)))))
-        .child(field("Running", div().id("pc-running").font_family(MONO).text_size(12)
-          .text_color(this.state === "live" ? t.foreground : this.state === "still" ? t.working : t.muted)
-          .tooltip(`pid ${s.pid}`).child(running)))
-        .child(field("Reach", s.network
-          ? h_flex().gap(6).items_center().text_color(t.foreground).child(svg(ICON("globe")).size(12).text_color(t.muted)).child("Your network")
-          : div().text_color(t.foreground).child("This Mac only")))
-        .when(others.length > 0, (el) => el.child(field("Also", mono(others.map((x) => `:${x}`).join("  "))))))
-      // The Stop question shares the button row, so asking never changes the dialog's height.
-      .child(h_flex().h(M.buttons).flex_none().gap(8).items_center().text_size(12.5)
-        .child(div().flex_1().min_w(0).text_size(12).line_height("16px").text_color(t.muted)
-          .when(this.asking, (el) => el.child(`Stop ${s.command} (pid ${s.pid})? Closes ${s.ports.map((x) => `:${x}`).join(", ")}.`)))
+        .when(!!s.cwd && s.cwd !== w.folder, (el) => el.child(field("Folder", div().id("pc-folder").whitespace_nowrap().overflow_hidden()
+          .text_ellipsis_start().text_color(t.foreground).tooltip(s.cwd).child(w.folderText || s.cwd))))
+        .child(field("Running", div().id("pc-running").tooltip(`pid ${s.pid}`).child(running)))
+        .when(others.length > 0, (el) => el.child(field("Also on", div().text_color(t.foreground).child(others.map((x) => `:${x}`).join("  "))))))
+      // The Stop question states the deciding fact (Ports' stopFact, never a verdict) in the button row, so asking never
+      // changes the dialog's height.
+      .child(h_flex().h(M.buttons).flex_none().gap(8).items_center()
+        .child(div().flex_1().min_w(0).max_h(M.buttons).overflow_hidden().text_size(12).line_height("16px").text_color(t.muted)
+          .when(this.asking, (el) => el.child(`Stop ${s.command} (pid ${s.pid})? ${w.fact ? `${w.fact} ` : ""}Closes ${portList(s.ports)}.`)))
         .children(list.map(button)));
   }
 }

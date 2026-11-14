@@ -8,7 +8,7 @@
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { exec, home, agents, terminals, panes, spaces, layout, run, theme, shared, setShared, nextCommand, focused, openOverlay } from "herdr";
-import { parseLsof, parseCwds, parsePs, ownerContext, servers, sortServers, ago, basename, byLine, blockHeight, subAgents, cardHeight, isLocal, rootOf, CARD, ROW_H, HEADER_H, EMPTY_H, FOOT_H } from "./lib.js";
+import { parseLsof, parseCwds, parsePs, ownerContext, servers, sortServers, ago, basename, byLine, ownerLines, stopFact, folderLabel, blockHeight, subAgents, cardHeight, isLocal, rootOf, CARD, ROW_H, HEADER_H, EMPTY_H, FOOT_H } from "./lib.js";
 
 const POLL_MS = 5000;
 const FOCUS_CHECK_MS = 250;
@@ -16,7 +16,6 @@ const OPEN_AFTER_MS = 150; // after the System popup has closed
 const FORGOTTEN_S = 3600; // an orphan older than this reads as forgotten (amber age)
 const RAIL_W = 160; // the sidebar folds to a rail below this width (as Inbox reads it)
 const EXEC = { timeout: 4000 };
-const MONO = "Geist Mono";
 const ICON = (name) => `mods/ports/${name}.svg`;
 // A row leads with what the server is (lib's kindOf); who started it sits on the right, by its branch.
 const KIND = { web: ["app-window", "Web server"], db: ["database", "Database"], debug: ["bug", "Debugger"],
@@ -133,12 +132,16 @@ export default class Ports extends View {
 
   // How a row names its owner, from Herdr's live model (re-read every render: branches and states move).
   who(s, model) {
-    const o = s.owner;
-    if (o.kind === "docker") return { ...NOBODY, label: "docker", kind: o.kind };
-    if (o.kind === "orphan") return { ...NOBODY, label: byLine(s.by), detail: byLine(s.by, true), kind: o.kind }; // who started it, never "no agent"
+    const o = s.owner, folderText = folderLabel(s.cwd, home());
+    // The card's words are decided in lib (ownerLines, stopFact); the card only draws them.
+    const words = (w) => { const named = { ...w, program: w.program?.name, by: s.by, home: home(), folderText };
+      return { ...w, folderText, ...ownerLines(named), fact: stopFact(named) }; };
+    if (o.kind === "docker") return words({ ...NOBODY, label: "docker", kind: o.kind });
+    if (o.kind === "orphan") return words({ ...NOBODY, label: byLine(s.by), kind: o.kind }); // who started it, never "no agent"
     const term = model.terms.get(o.address), pane = model.panes.get(o.address), agent = model.agents.get(o.address);
     const folder = pane?.cwd ?? term?.foreground?.cwd ?? term?.cwd;
-    return {
+    const space = agent?.space_name ?? model.spaces.find((sp) => sp.tabs.some((tb) => tb.id === pane?.tab))?.name ?? null;
+    const w = {
       label: pane?.branch || basename(folder) || o.address,
       program: agent?.program ?? term?.program ?? null,
       task: [agent ? task(agent, model.tabs.get(agent.tab)) : clean(term?.title)].map((x) => (x === pane?.branch ? clean(agent?.title ?? term?.title) : x))
@@ -146,7 +149,9 @@ export default class Ports extends View {
       status: agent?.status ?? term?.status ?? null,
       address: o.address, sub: !!term?.parent, probable: o.kind === "probable", kind: o.kind,
       agent: !!(term?.program?.agent || term?.report), tab: pane?.tab ?? agent?.tab ?? null, folder: folder ?? null, branch: pane?.branch ?? null,
+      space, why: o.why ?? null,
     };
+    return words(w);
   }
 
   model() {
@@ -155,6 +160,7 @@ export default class Ports extends View {
       panes: new Map(panes().filter((p) => p.terminal).map((p) => [p.terminal, p])),
       agents: new Map(agents().map((a) => [a.address, a])),
       tabs: new Map(spaces().flatMap((sp) => sp.tabs).map((tb) => [tb.id, tb])),
+      spaces: spaces(),
     };
   }
 
@@ -233,7 +239,7 @@ export default class Ports extends View {
       .on_hover((on, cx) => { if (on) this.hovered = s.key; else if (this.hovered === s.key) this.hovered = null; cx.notify(); })
       .on_click(() => { this.cur = s.key; this.card(s, w); })
       .child(div().id(`port-kind-${s.key}`).flex_none().tooltip(what).child(svg(ICON(icon)).size(14).text_color(t.muted)))
-      .child(div().flex_none().font_family(MONO).text_size(12.5).text_color(t.foreground).child(`:${s.port}`))
+      .child(div().flex_none().text_size(12.5).text_color(t.foreground).child(`:${s.port}`))
       .child(div().flex_none().text_size(12).text_color(t.muted).child(s.command))
       .child(over && s.web ? h_flex().flex_1().justify_end().child(open) : owner);
   }
@@ -243,10 +249,8 @@ export default class Ports extends View {
   working(t) {
     const tabbed = agents(), all = [...tabbed, ...subAgents(terminals(), new Set(tabbed.map((a) => a.address)))];
     const n = all.filter((a) => a.status === "working").length;
-    const open = () => {
-      setShared("graph.want", { activeOnly: n > 0, at: Date.now() });
-      if (find(layout(), "panel")?.hidden || find(layout(), "panel-body")?.active !== "graph") run("tabs-plus.graph");
-    };
+    // The graph decides Active or All itself each time it opens (agent-graph lib openOnActive).
+    const open = () => { if (find(layout(), "panel")?.hidden || find(layout(), "panel-body")?.active !== "graph") run("tabs-plus.graph"); };
     return h_flex().id("ports-working").h(FOOT_H).px(16).gap(8).flex_none().items_center().text_size(12).text_color(t.muted)
       .border_t(1).border_color(t.border).cursor_pointer().hover((s) => s.text_color(t.foreground)).on_click(open)
       .tooltip(n ? "Open the agent graph on what's working" : "Open the agent graph")

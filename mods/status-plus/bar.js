@@ -11,7 +11,6 @@ const FAST_MS = 5000; // ps, vm_stat, sysctl
 const SLOW_MS = 60000; // df, pmset
 const CPU_SAMPLES = 2; // the bar's CPU is the mean of the last two samples (10 s)
 const EXEC = { timeout: 4000 };
-const MONO = "Geist Mono";
 const ICON = { cpu: "cpu", mem: "memory-stick", disk: "hard-drive", battery: "battery-medium" };
 const TIP = { cpu: "CPU, last 10 s. Click for who's using it", mem: "Memory used of total; its colour follows memory pressure",
   disk: "Free space on your home volume", battery: "Battery" };
@@ -101,7 +100,7 @@ export class Bar {
     const seg = (s) => h_flex().id(`sys-${s.id}`).h(22).px(6).gap(6).items_center().rounded(6).cursor_pointer()
       .text_color(ink[s.level]).hover((x) => x.bg(t.hover)).tooltip(TIP[s.id]).on_click(() => this.open(s.id === "battery" ? "cpu" : s.id))
       .child(svg(`mods/status-plus/${s.id === "battery" && s.level !== "ok" ? "battery-low" : ICON[s.id]}.svg`).size(13))
-      .child(div().font_family(MONO).child(s.text));
+      .child(div().child(s.text));
     return h_flex().id("status-plus").size_full().px(14).gap(16).items_center().bg(t.chrome).border_t(1).border_color(t.border).text_size(11.8).text_color(t.muted)
       .on_size_change((size, cx) => {
         const w = Math.round(size.width / (settings().zoom ?? 1));

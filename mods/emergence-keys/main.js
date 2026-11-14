@@ -30,7 +30,7 @@ export default class EmergenceKeys extends View {
       .child(v_flex().flex_1().min_h(0).overflow_y_scrollbar().py(2).gap(10)
         .children(rows(keys(), this.filter).map(([name, list]) => v_flex().gap(2)
           .child(div().text_size(11.5).font_medium().text_color(t.dim).child(name))
-          .children(list.map(([k, what]) => h_flex().h(30).px(8).rounded(7).items_center()
+          .children(list.map(([k, what]) => h_flex().h(26).px(8).rounded(7).items_center()
             .child(div().w(170).flex_none().text_color(t.accent).child(k))
             .child(div().flex_1().min_w(0).truncate().text_color(t.foreground).child(what)))))));
   }
