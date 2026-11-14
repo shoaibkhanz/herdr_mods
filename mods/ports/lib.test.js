@@ -130,6 +130,11 @@ test("startedBy: Codex CLI in iTerm names both; a Codex desktop app reads as an 
     .toBe("Terminal app");
 });
 
+test("startedBy: Claude Code under the Claude app reads once, not 'Claude in Claude'", () => {
+  const ps = procs([500, 400, "node"], [400, 300, "claude"], [300, 1, "/Applications/Claude.app/Contents/MacOS/Claude"]);
+  expect(byLine(startedBy(500, ps, "/w/app"))).toBe("Claude app");
+});
+
 test("startedBy: a server whose Claude session has ended says so", () => {
   const by = startedBy(8035, procs([8035, 1, "/opt/homebrew/Cellar/python@3.15/3.15.2/Frameworks/Python.framework/Versions/3.15/Resources/Python.app/Contents/MacOS/Python"]), SCRATCH);
   expect(by).toEqual({ agent: "Claude", app: null, left: true, place: "ai-artifacts-research-6b95a0" }); // its own Python.app isn't an app
