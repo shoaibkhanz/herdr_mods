@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { buildTree, layout, prChip, prsByBranch, mrsAsPRs, parseRevParse, cleanTitle, SIZE, mix, ringed, sidebarCursor } from "./lib.js";
+import { buildTree, layout, prChip, prsByBranch, mrsAsPRs, parseRevParse, cleanTitle, SIZE, mix, ringed, sidebarCursor, openOnActive, filterCounts } from "./lib.js";
 
 const GIT = {
   "/r/app": { top: "/r/app", common: "/r/app/.git", branch: "main" },
@@ -123,4 +123,23 @@ test("sidebarCursor: whichever list holds the keyboard; the newer one while the 
   expect(sidebarCursor(a, null)).toBe(a);
   expect(sidebarCursor(null, s)).toBe(s);
   expect(sidebarCursor(a, s)).toBe(s);
+});
+
+// The Agents panel opens on Active when anything works or needs you, else All; the switch counts what each shows.
+const FILTER_ITEMS = [
+  { id: "a", agent: true, status: "working" }, { id: "b", agent: true, status: "idle" },
+  { id: "c", agent: true, status: "done" }, { id: "t", agent: false, status: "idle" },
+];
+
+test("openOnActive: working or needs you opens on Active; finished, idle or no agents opens on All", () => {
+  expect(openOnActive(FILTER_ITEMS)).toBe(true);
+  expect(openOnActive([{ agent: true, status: "blocked" }])).toBe(true);
+  expect(openOnActive([{ agent: true, status: "done" }, { agent: true, status: "idle" }])).toBe(false);
+  expect(openOnActive([{ agent: false, status: "working" }])).toBe(false); // a plain terminal isn't an agent
+  expect(openOnActive([])).toBe(false);
+});
+
+test("filterCounts: Active counts the agents Active shows (all but idle), All every agent", () => {
+  expect(filterCounts(FILTER_ITEMS)).toEqual({ active: 2, all: 3 });
+  expect(filterCounts([])).toEqual({ active: 0, all: 0 });
 });
